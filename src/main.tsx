@@ -23,11 +23,6 @@ function MacDownload({ compact = false }: { compact?: boolean }) {
         <DialogDescription className="mac-dialog-description">
           Téléchargez le fichier, puis suivez bien les instructions d’installation fournies avec la version macOS.
         </DialogDescription>
-        <ol className="mac-steps">
-          <li>Ouvrez le fichier ZIP téléchargé.</li>
-          <li>Placez l’application Scénario dans le dossier Applications.</li>
-          <li>Si macOS demande une confirmation au premier lancement, ouvrez l’application depuis le Finder.</li>
-        </ol>
         <div className="mac-dialog-actions">
           <DialogClose className="mac-cancel">Annuler</DialogClose>
           <a className="download" href={macDownloadPath} download>

@@ -42,12 +42,6 @@ function App() {
           <img src="/scenario-logo.png" alt="" />
           <span>Scénario</span>
         </a>
-        <div className="topbar-downloads">
-          <a className="download compact" href={windowsDownloadPath} download>
-            Télécharger <span>Windows</span>
-          </a>
-          <MacDownload compact />
-        </div>
       </header>
 
       <section className="hero" id="accueil">
@@ -72,10 +66,6 @@ function App() {
         </div>
       </section>
 
-      <section className="intro">
-        <p>Un outil construit pour garder le rythme de l’écriture.</p>
-      </section>
-
       <section className="features" aria-label="Fonctionnalités">
         <article>
           <span>01</span>
@@ -97,18 +87,6 @@ function App() {
           <h2>Un scénario prêt à partager.</h2>
           <p>Page de garde, numéros de scènes, commentaires, export PDF et traduction sont là lorsque vous en avez besoin.</p>
         </article>
-      </section>
-
-      <section className="closing">
-        <img src="/scenario-logo.png" alt="Logo Scénario" />
-        <div>
-          <p className="eyebrow">SCÉNARIO POUR WINDOWS ET MACOS</p>
-          <h2>Votre histoire mérite une page blanche.</h2>
-        </div>
-        <div className="closing-downloads">
-          <a className="download" href={windowsDownloadPath} download>Télécharger Windows <b>→</b></a>
-          <MacDownload />
-        </div>
       </section>
 
       <footer>Scénario · Un logiciel d’écriture de scénario pour Windows et macOS</footer>

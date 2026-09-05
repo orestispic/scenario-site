@@ -1,7 +1,43 @@
 import { createRoot } from "react-dom/client";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import "./site.css";
 
-const downloadPath = "/downloads/Scenario-Setup-0.1.6.exe";
+const windowsDownloadPath = "/downloads/Scenario-Setup-0.1.6.exe";
+const macDownloadPath = "/downloads/Scenario-macOS-0.1.6.zip";
+
+function MacDownload({ compact = false }: { compact?: boolean }) {
+  return (
+    <Dialog>
+      <DialogTrigger className={`download${compact ? " compact" : ""}`}>
+        Télécharger <span>macOS</span>{!compact && <b>→</b>}
+      </DialogTrigger>
+      <DialogContent className="mac-dialog" showCloseButton={false}>
+        <DialogTitle className="mac-dialog-title">Avant d’installer sur macOS</DialogTitle>
+        <DialogDescription className="mac-dialog-description">
+          Téléchargez le fichier, puis suivez bien les instructions d’installation fournies avec la version macOS.
+        </DialogDescription>
+        <ol className="mac-steps">
+          <li>Ouvrez le fichier ZIP téléchargé.</li>
+          <li>Placez l’application Scénario dans le dossier Applications.</li>
+          <li>Si macOS demande une confirmation au premier lancement, ouvrez l’application depuis le Finder.</li>
+        </ol>
+        <div className="mac-dialog-actions">
+          <DialogClose className="mac-cancel">Annuler</DialogClose>
+          <a className="download" href={macDownloadPath} download>
+            Télécharger pour macOS <b>→</b>
+          </a>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function App() {
   return (
@@ -11,9 +47,12 @@ function App() {
           <img src="/scenario-logo.png" alt="" />
           <span>Scénario</span>
         </a>
-        <a className="download compact" href={downloadPath} download>
-          Télécharger <span>Windows</span>
-        </a>
+        <div className="topbar-downloads">
+          <a className="download compact" href={windowsDownloadPath} download>
+            Télécharger <span>Windows</span>
+          </a>
+          <MacDownload compact />
+        </div>
       </header>
 
       <section className="hero" id="accueil">
@@ -24,8 +63,9 @@ function App() {
             Scénario réunit l’essentiel pour écrire, mettre en page et terminer un scénario sans se perdre dans les réglages.
           </p>
           <div className="hero-actions">
-            <a className="download" href={downloadPath} download>Télécharger pour Windows <b>→</b></a>
-            <span>Version 0.1.6 · Windows 10 et 11</span>
+            <a className="download" href={windowsDownloadPath} download>Télécharger pour Windows <b>→</b></a>
+            <MacDownload />
+            <span>Version 0.1.6 · Windows et macOS</span>
           </div>
         </div>
         <div className="hero-mark" aria-hidden="true">
@@ -67,13 +107,16 @@ function App() {
       <section className="closing">
         <img src="/scenario-logo.png" alt="Logo Scénario" />
         <div>
-          <p className="eyebrow">SCÉNARIO POUR WINDOWS</p>
+          <p className="eyebrow">SCÉNARIO POUR WINDOWS ET MACOS</p>
           <h2>Votre histoire mérite une page blanche.</h2>
         </div>
-        <a className="download" href={downloadPath} download>Télécharger <b>→</b></a>
+        <div className="closing-downloads">
+          <a className="download" href={windowsDownloadPath} download>Télécharger Windows <b>→</b></a>
+          <MacDownload />
+        </div>
       </section>
 
-      <footer>Scénario · Un logiciel d’écriture de scénario pour Windows</footer>
+      <footer>Scénario · Un logiciel d’écriture de scénario pour Windows et macOS</footer>
     </main>
   );
 }

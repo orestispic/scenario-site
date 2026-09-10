@@ -27,8 +27,8 @@ function MacDownload({ compact = false }: { compact?: boolean }) {
           Avant d’installer sur macOS
         </DialogTitle>
         <DialogDescription className="mac-dialog-description">
-          Téléchargez le fichier, puis suivez bien les instructions
-          d’installation incluses dans le ZIP macOS.
+          Le ZIP contient Scénario.app et le guide d’installation PDF.
+          Téléchargez-le, puis ouvrez le guide avant d’installer l’application.
         </DialogDescription>
         <div className="mac-dialog-actions">
           <DialogClose className="mac-cancel">Annuler</DialogClose>

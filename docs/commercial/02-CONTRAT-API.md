@@ -2,6 +2,8 @@
 
 Base proposée : `/api/v1`. Toutes les réponses utilisent JSON UTF-8 avec `request_id`. Les routes authentifiées exigent une session valide et renvoient des erreurs `{ code, message, request_id }`; les corps entrants sont validés côté serveur. Ce contrat est une spécification, pas une API active.
 
+La définition TypeScript de phase 1 est `lib/commercial/contracts.ts`, version `2026-09-v1`. Elle est maintenue en miroir du client car les deux dépôts restent indépendants ; toute évolution doit modifier les deux définitions dans le même changement coordonné. La route de lecture ajoutée pour l’interface de développement est `GET /me/account-overview` : identité, instantané de droits et règle de compatibilité, sans données de paiement.
+
 | Domaine | Route et méthode | Intention | Autorisation |
 | --- | --- | --- | --- |
 | Authentification | `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/password/reset/request`, `/auth/password/reset/confirm` | Compte et session | Publique avec rate limit, sauf logout. |

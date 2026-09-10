@@ -1,8 +1,8 @@
 # Reprise — phase 1 commerciale
 
-## État livré par la phase 0
+## État livré par les phases 0 et 1
 
-Cette branche `codex/commercial-platform` dérive de `scenario-site/main`. Les fichiers ajoutés sont uniquement la préparation commerciale, le schéma SQL initial et `.env.example`; les parcours du site existant ne sont pas modifiés. La branche `codex/commercial-v1` du worktree application contient le contrat client complémentaire.
+Cette branche `codex/commercial-platform` dérive de `scenario-site/main`. Les fichiers ajoutés sont la préparation commerciale, le schéma SQL initial, `.env.example` et le contrat TypeScript serveur `lib/commercial/contracts.ts`; les parcours du site existant ne sont pas modifiés. La branche `codex/commercial-v1` contient l’adaptateur API injecté, un faux serveur de développement, le cache d’entitlements et l’interface de compte/licence en lecture seule.
 
 Lire dans cet ordre :
 

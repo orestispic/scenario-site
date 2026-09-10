@@ -8,7 +8,11 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vite build --config vite.vercel.config.ts",
+    "test:api": "node --experimental-transform-types --test worker/tests/api.test.ts tests/rls-migrations.test.ts",
+    "typecheck": "tsc --noEmit --incremental false",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "start:api": "wrangler dev --config wrangler.api.toml",
+    "start:api:local": "wrangler dev --config wrangler.local-test.toml",
     "lint": "oxlint",
     "format": "oxfmt"
   },

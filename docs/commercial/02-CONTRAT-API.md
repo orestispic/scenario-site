@@ -4,6 +4,8 @@ Base proposée : `/api/v1`. Toutes les réponses utilisent JSON UTF-8 avec `requ
 
 La définition TypeScript de phase 1 est `lib/commercial/contracts.ts`, version `2026-09-v1`. Elle est maintenue en miroir du client car les deux dépôts restent indépendants ; toute évolution doit modifier les deux définitions dans le même changement coordonné. La route de lecture ajoutée pour l’interface de développement est `GET /me/account-overview` : identité, instantané de droits et règle de compatibilité, sans données de paiement.
 
+La phase 2 conserve ce fichier v1 intact et ajoute `lib/commercial/contracts-v2.ts`, version `2026-09-v2`. Le Worker implémente les routes exactes `/v1/config`, `/v1/me`, `/v1/entitlements`, `/v1/devices`, `/v1/devices/activate`, `/v1/devices/deactivate`, `/v1/usage` et `/v1/auth/logout`. L’ancien agrégat `/api/v1/me/account-overview` reste une spécification de phase 1, non exposée par le Worker v2.
+
 | Domaine | Route et méthode | Intention | Autorisation |
 | --- | --- | --- | --- |
 | Authentification | `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/password/reset/request`, `/auth/password/reset/confirm` | Compte et session | Publique avec rate limit, sauf logout. |

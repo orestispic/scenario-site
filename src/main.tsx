@@ -14,7 +14,6 @@ const releaseDownloadBase =
   'https://github.com/orestispic/scenario-app/releases/latest/download';
 const windowsDownloadPath = `${releaseDownloadBase}/Scenario-Setup.exe`;
 const macDownloadPath = `${releaseDownloadBase}/Scenario-macOS.zip`;
-const macGuidePath = `${releaseDownloadBase}/Guide-installation-macOS.pdf`;
 
 function MacDownload({ compact = false }: { compact?: boolean }) {
   return (
@@ -29,16 +28,8 @@ function MacDownload({ compact = false }: { compact?: boolean }) {
         </DialogTitle>
         <DialogDescription className="mac-dialog-description">
           Téléchargez le fichier, puis suivez bien les instructions
-          d’installation fournies avec la version macOS.
+          d’installation incluses dans le ZIP macOS.
         </DialogDescription>
-        <a
-          className="mac-guide"
-          href={macGuidePath}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Consulter le guide d’installation macOS (PDF)
-        </a>
         <div className="mac-dialog-actions">
           <DialogClose className="mac-cancel">Annuler</DialogClose>
           <a
@@ -84,7 +75,7 @@ function App() {
                 Télécharger pour Windows <b>→</b>
               </a>
               <MacDownload />
-              <span>Version 0.1.6 · Windows et macOS</span>
+              <span>Version 0.1.7 · Windows et macOS</span>
             </div>
           </div>
           <div className="hero-mark" aria-hidden="true">

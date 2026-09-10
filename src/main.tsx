@@ -10,8 +10,11 @@ import {
 } from '@/components/ui/dialog';
 import './site.css';
 
-const windowsDownloadPath = '/downloads/Scenario-Setup-0.1.6.exe';
-const macDownloadPath = '/downloads/Scenario-macOS-0.1.6.zip';
+const releaseDownloadBase =
+  'https://github.com/orestispic/scenario-app/releases/latest/download';
+const windowsDownloadPath = `${releaseDownloadBase}/Scenario-Setup.exe`;
+const macDownloadPath = `${releaseDownloadBase}/Scenario-macOS.zip`;
+const macGuidePath = `${releaseDownloadBase}/Guide-installation-macOS.pdf`;
 
 function MacDownload({ compact = false }: { compact?: boolean }) {
   return (
@@ -28,6 +31,14 @@ function MacDownload({ compact = false }: { compact?: boolean }) {
           Téléchargez le fichier, puis suivez bien les instructions
           d’installation fournies avec la version macOS.
         </DialogDescription>
+        <a
+          className="mac-guide"
+          href={macGuidePath}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Consulter le guide d’installation macOS (PDF)
+        </a>
         <div className="mac-dialog-actions">
           <DialogClose className="mac-cancel">Annuler</DialogClose>
           <a

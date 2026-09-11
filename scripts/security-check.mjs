@@ -42,7 +42,7 @@ async function scan(directory) {
         `Token persistence: ${path}`,
       );
       assert.ok(
-        !/SUPABASE_SERVICE_ROLE_KEY|STRIPE_SECRET_KEY|OFFLINE_GRANT_PRIVATE_JWK|OPENAI_API_KEY|OPENAI_(?:SHORT_ACTION|PDF_IMPORT)_MODEL/.test(
+        !/SUPABASE_(?:SECRET|SERVICE_ROLE)_KEY|STRIPE_SECRET_KEY|OFFLINE_GRANT_PRIVATE_JWK|OPENAI_API_KEY|OPENAI_(?:SHORT_ACTION|PDF_IMPORT)_MODEL/.test(
           text,
         ),
         `Server config in client: ${path}`,

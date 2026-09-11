@@ -5,6 +5,7 @@ import type {
 } from '../../lib/commercial/contracts-v3.ts';
 import type { EntitlementSnapshot } from '../../lib/commercial/contracts.ts';
 import type { VerifiedStripeEvent } from './stripeWebhook.ts';
+import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 import type { ActivateDeviceInput, WorkerEnvironment } from './types.ts';
 
 export interface CheckoutSelection extends BillingOfferView {
@@ -208,11 +209,7 @@ export class SupabaseBillingRepository implements BillingRepository {
     return (Array.isArray(value) ? value[0] : value) as T;
   }
   private headers(): Record<string, string> {
-    return {
-      Accept: 'application/json',
-      apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
-    };
+    return supabaseAdminHeaders(this.environment);
   }
   private async sha256(value: string): Promise<string> {
     const digest = await crypto.subtle.digest(

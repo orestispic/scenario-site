@@ -4,6 +4,7 @@ import type {
 } from '../../lib/commercial/contracts-v5.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
+import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 
 export interface AiReservation {
   id: string;
@@ -117,9 +118,7 @@ export class SupabaseAiQuotaRepository implements AiQuotaRepository {
       {
         method: 'POST',
         headers: {
-          Accept: 'application/json',
-          apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
+          ...supabaseAdminHeaders(this.environment),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),

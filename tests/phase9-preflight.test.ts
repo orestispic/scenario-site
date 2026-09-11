@@ -12,7 +12,7 @@ const validEnvironment = {
     'https://app-staging.scenario.test,tauri://localhost,http://tauri.localhost',
   SUPABASE_URL: 'https://scenario-staging.supabase.co',
   SUPABASE_ANON_KEY: 'anon_test_value',
-  SUPABASE_SERVICE_ROLE_KEY: 'service_role_test_value',
+  SUPABASE_SECRET_KEY: 'sb_secret_synthetic_unit_test',
   STRIPE_SECRET_KEY: 'sk_test_synthetic_unit_test',
   STRIPE_WEBHOOK_SECRET: 'whsec_synthetic_unit_test',
   DEVICE_FINGERPRINT_PEPPER: 'a'.repeat(32),
@@ -60,6 +60,18 @@ describe('préflight phase 9', () => {
     const report = inspectPhase9Server(validEnvironment, safeConfig);
     assert.equal(report.ready, true);
     assert.ok(report.checks.every((check) => check.ready));
+  });
+
+  it('accepte encore la clé service_role historique pendant la transition', () => {
+    const { SUPABASE_SECRET_KEY: _, ...legacyEnvironment } = validEnvironment;
+    const report = inspectPhase9Server(
+      {
+        ...legacyEnvironment,
+        SUPABASE_SERVICE_ROLE_KEY: 'legacy-service-role-unit-test',
+      },
+      safeConfig,
+    );
+    assert.equal(report.ready, true);
   });
 
   it('refuse clés live, placeholders, secrets réutilisés et canal absent', () => {

@@ -8,6 +8,7 @@ import type {
 import type { LocalTestRepository } from './localTestRepository.ts';
 import type { CommercialRepository, WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
+import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 
 export const CLOUD_CONTENT_TYPE = 'application/vnd.scenario+json' as const;
 export const CLOUD_MAX_BYTES = 4_194_304;
@@ -732,8 +733,7 @@ export class SupabaseCloudScenarioRepository implements CloudScenarioRepository 
       {
         method: 'POST',
         headers: {
-          apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
+          ...supabaseAdminHeaders(this.environment),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -795,8 +795,7 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
       {
         method: 'POST',
         headers: {
-          apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
+          ...supabaseAdminHeaders(this.environment),
           'Content-Type': input.contentType,
           'x-upsert': 'true',
           'x-scenario-checksum': input.checksum,
@@ -819,8 +818,7 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
       {
         method: 'POST',
         headers: {
-          apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
+          ...supabaseAdminHeaders(this.environment),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ expiresIn: input.expiresInSeconds }),

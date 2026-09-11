@@ -29,7 +29,8 @@ export interface WorkerEnvironment {
   API_ALLOWED_ORIGINS: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  SUPABASE_SECRET_KEY?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
   SUPABASE_JWT_AUDIENCE?: string;
   DEVICE_FINGERPRINT_PEPPER: string;
   OFFLINE_GRANT_PRIVATE_JWK: string;

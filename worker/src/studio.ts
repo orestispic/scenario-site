@@ -16,6 +16,7 @@ import type {
 } from './cloudSync.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
+import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 
 export interface StudioContext extends CloudAccessContext {
   emailHash: string;
@@ -809,8 +810,7 @@ export class SupabaseStudioRepository implements StudioRepository {
       {
         method: 'POST',
         headers: {
-          apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-          Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
+          ...supabaseAdminHeaders(this.environment),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),

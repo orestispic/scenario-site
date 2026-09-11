@@ -10,6 +10,7 @@ import type {
   ProfileRecord,
   WorkerEnvironment,
 } from './types.ts';
+import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 
 type DatabaseProfile = {
   id: string;
@@ -246,10 +247,6 @@ export class SupabaseRestRepository implements CommercialRepository {
   }
 
   private serviceHeaders(): Record<string, string> {
-    return {
-      Accept: 'application/json',
-      apikey: this.environment.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${this.environment.SUPABASE_SERVICE_ROLE_KEY}`,
-    };
+    return supabaseAdminHeaders(this.environment);
   }
 }

@@ -88,9 +88,12 @@ export function inspectPhase9Server(environment, preproductionConfig) {
       host.endsWith('.supabase.co'),
     ) &&
       usable(environment.SUPABASE_ANON_KEY) &&
-      usable(environment.SUPABASE_SERVICE_ROLE_KEY) &&
-      environment.SUPABASE_ANON_KEY !== environment.SUPABASE_SERVICE_ROLE_KEY,
-    'Fournir l’URL, la clé anon et la service role d’un projet Supabase de test isolé.',
+      (usable(environment.SUPABASE_SECRET_KEY) ||
+        usable(environment.SUPABASE_SERVICE_ROLE_KEY)) &&
+      environment.SUPABASE_ANON_KEY !==
+        (environment.SUPABASE_SECRET_KEY ??
+          environment.SUPABASE_SERVICE_ROLE_KEY),
+    'Fournir l’URL, la clé publique et une clé secrète serveur Supabase de test isolée.',
   );
   const origins = (environment.API_ALLOWED_ORIGINS ?? '')
     .split(',')

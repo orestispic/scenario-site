@@ -8,7 +8,7 @@ Le lancement local est fonctionnel : `npm.cmd run phase9:preflight` vérifie la 
 
 ## Ordre de validation
 
-1. Réserver un projet Supabase de test vide et conserver son URL, sa clé anon et sa service role hors Git.
+1. Réserver un projet Supabase de test vide et conserver son URL, sa clé publique et sa clé secrète serveur hors Git. Le format `sb_secret_…` est préféré ; le JWT `service_role` historique reste accepté uniquement pendant la transition.
 2. Réserver un environnement Cloudflare de test sans route publique, puis créer le Durable Object Studio et sa liaison `STUDIO_REALTIME_CHANNEL`.
 3. Fournir des identifiants Stripe exclusivement test (`sk_test_…`, `whsec_…`). Aucun paiement réel n'est accepté par le Worker.
 4. Générer une paire JWK P-256 et sept peppers distincts dans le coffre de secrets de test.
@@ -32,3 +32,7 @@ Le préflight indique seulement les catégories manquantes. Il n'imprime ni clé
 Au lancement de la phase, aucune variable Supabase, Stripe ou Cloudflare n'est fournie. `wrangler.preproduction.toml` conserve volontairement ses domaines `.invalid` et ne déclare pas encore `STUDIO_REALTIME_CHANNEL`. La validation distante, le stockage objet partagé, le Durable Object réel, l'invalidation push, Stripe CLI et la bêta multi-machine ne sont donc pas présentés comme exécutés.
 
 Les validations locales des phases précédentes restent acquises ; elles ne remplacent pas les contrôles externes de cette phase.
+
+## Compatibilité des clés Supabase actuelles
+
+Le Worker accepte `SUPABASE_SECRET_KEY` et conserve temporairement `SUPABASE_SERVICE_ROLE_KEY` pour les environnements historiques. Une clé `sb_secret_…` est envoyée uniquement dans l'en-tête `apikey` : elle n'est jamais traitée comme un jeton Bearer. Le client continue d'utiliser exclusivement la clé publique et les sessions utilisateur ; aucune clé serveur ne peut être intégrée au bundle ou au stockage local.

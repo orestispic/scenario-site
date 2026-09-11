@@ -14,6 +14,10 @@ import type { LimiterNamespace } from './distributedRateLimit.ts';
 import type { Telemetry } from './observability.ts';
 import type { AiProvider } from './aiProvider.ts';
 import type { AiQuotaRepository } from './aiQuota.ts';
+import type {
+  CloudScenarioRepository,
+  ScenarioObjectStorage,
+} from './cloudSync.ts';
 
 export interface WorkerEnvironment {
   SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
@@ -43,6 +47,10 @@ export interface WorkerEnvironment {
   AI_MAX_TRANSLATION_SEGMENTS?: string;
   AI_MAX_RESPONSE_BYTES?: string;
   AI_IDEMPOTENCY_PEPPER: string;
+  CLOUD_IDEMPOTENCY_PEPPER: string;
+  CLOUD_STORAGE_BUCKET?: string;
+  CLOUD_MAX_BODY_BYTES?: string;
+  CLOUD_DOWNLOAD_TTL_SECONDS?: string;
 }
 
 export interface AuthenticatedIdentity {
@@ -139,5 +147,12 @@ export type WorkerDependencies = {
     pdfMaxBodyBytes: number;
     maxTranslationSegments: number;
     maxResponseBytes: number;
+  };
+  cloudRepository?: CloudScenarioRepository;
+  scenarioStorage?: ScenarioObjectStorage;
+  cloudIdempotencyPepper?: string;
+  cloudPolicy?: {
+    maximumBodyBytes: number;
+    downloadTtlSeconds: number;
   };
 };

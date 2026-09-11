@@ -16,6 +16,9 @@ AI_SHORT_MAX_BODY_BYTES = "131072"
 AI_PDF_MAX_BODY_BYTES = "1048576"
 AI_MAX_TRANSLATION_SEGMENTS = "2000"
 AI_MAX_RESPONSE_BYTES = "2097152"
+CLOUD_STORAGE_BUCKET = "scenario-documents-preproduction"
+CLOUD_MAX_BODY_BYTES = "4194304"
+CLOUD_DOWNLOAD_TTL_SECONDS = "300"
 
 [[durable_objects.bindings]]
 name = "RATE_LIMITER"
@@ -34,4 +37,5 @@ enabled = true
 invocation_logs = false
 
 # Supply separate Supabase TEST, Stripe TEST and signing secrets through the
-# secret manager. No routes, account_id or production resource is configured.
+# secret manager, including CLOUD_IDEMPOTENCY_PEPPER. No routes, account_id or
+# production resource is configured.

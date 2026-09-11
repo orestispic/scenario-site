@@ -7,7 +7,7 @@ import {
 } from './types.ts';
 import { fingerprintActivationKey } from './activationKeys.ts';
 import { StripeWebhookError } from './stripeWebhook.ts';
-import { API_ROUTES, structuredTelemetry } from './observability.ts';
+import { normalizeApiRoute, structuredTelemetry } from './observability.ts';
 import type { BoundOfflineGrantPayload } from '../../lib/commercial/contracts-v4.ts';
 import type {
   AiActionRequest,
@@ -20,15 +20,167 @@ import {
   type AiProviderResult,
 } from './aiProvider.ts';
 import type { AiReservation } from './aiQuota.ts';
+import type { CloudSyncRequest } from '../../lib/commercial/contracts-v6.ts';
+import { CLOUD_CONTENT_TYPE, ScenarioConflictError } from './cloudSync.ts';
 
 class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
   }
+}
+
+const UUID_PATTERN =
+  '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+const UUID_REGEX = new RegExp(`^${UUID_PATTERN}$`, 'i');
+
+function uuid(value: unknown, code = 'invalid_scenario_id'): string {
+  if (typeof value !== 'string' || !UUID_REGEX.test(value))
+    throw new ApiError(400, code, 'Identifiant invalide.');
+  return value;
+}
+
+function cloudPath(
+  pathname: string,
+): { route: string; scenarioId?: string; versionId?: string } | null {
+  const route = normalizeApiRoute(pathname);
+  if (!route.startsWith('/v5/')) return null;
+  const values = pathname.match(new RegExp(UUID_PATTERN, 'ig')) ?? [];
+  return { route, scenarioId: values[0], versionId: values[1] };
+}
+
+function readCloudHeaders(request: Request, mutation: boolean) {
+  const deviceFingerprint =
+    request.headers.get('x-scenario-device-fingerprint') ?? '';
+  const platform = request.headers.get('x-scenario-platform');
+  const clientVersion = request.headers.get('x-scenario-client-version') ?? '';
+  const idempotencyKey = request.headers.get('idempotency-key') ?? '';
+  if (mutation && !/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey))
+    throw new ApiError(
+      400,
+      'invalid_idempotency_key',
+      'Clé d’idempotence invalide.',
+    );
+  if (deviceFingerprint.length < 16 || deviceFingerprint.length > 512)
+    throw new ApiError(
+      400,
+      'invalid_fingerprint',
+      'Empreinte d’appareil invalide.',
+    );
+  if (platform !== 'windows' && platform !== 'macos')
+    throw new ApiError(400, 'invalid_platform', 'Plateforme invalide.');
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(clientVersion))
+    throw new ApiError(
+      400,
+      'invalid_client_version',
+      'Version client invalide.',
+    );
+  return {
+    idempotencyKey,
+    deviceFingerprint,
+    platform: platform as 'windows' | 'macos',
+    clientVersion,
+  };
+}
+
+async function sha256Hex(value: Uint8Array): Promise<string> {
+  const bytes = value.buffer.slice(
+    value.byteOffset,
+    value.byteOffset + value.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function readCloudSync(
+  request: Request,
+  maximum: number,
+): Promise<CloudSyncRequest> {
+  const body = await readObjectBody(request, maximum);
+  assertExactKeys(body, [
+    'scenarioId',
+    'title',
+    'parentVersionId',
+    'checksum',
+    'sizeBytes',
+    'contentType',
+    'format',
+    'origin',
+    'content',
+  ]);
+  const scenarioId = uuid(body.scenarioId);
+  const title = readString(body, 'title', 200);
+  const parentVersionId =
+    body.parentVersionId === null
+      ? null
+      : uuid(body.parentVersionId, 'invalid_parent_version_id');
+  if (
+    body.contentType !== CLOUD_CONTENT_TYPE ||
+    body.format !== 'scenario-v1' ||
+    !['save', 'import', 'offline_replay'].includes(String(body.origin))
+  )
+    throw new ApiError(
+      415,
+      'scenario_format_refused',
+      'Format de scénario refusé.',
+    );
+  if (typeof body.content !== 'string')
+    throw new ApiError(400, 'invalid_content', 'Contenu invalide.');
+  const bytes = new TextEncoder().encode(body.content);
+  if (
+    !Number.isSafeInteger(body.sizeBytes) ||
+    body.sizeBytes !== bytes.byteLength ||
+    bytes.byteLength < 2 ||
+    bytes.byteLength > maximum
+  )
+    throw new ApiError(
+      400,
+      'scenario_size_mismatch',
+      'Taille de scénario invalide.',
+    );
+  if (
+    typeof body.checksum !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(body.checksum) ||
+    (await sha256Hex(bytes)) !== body.checksum
+  )
+    throw new ApiError(
+      400,
+      'scenario_checksum_mismatch',
+      'Empreinte de scénario invalide.',
+    );
+  let document: unknown;
+  try {
+    document = JSON.parse(body.content);
+  } catch {
+    throw new ApiError(400, 'invalid_scenario_json', 'Document invalide.');
+  }
+  if (
+    !document ||
+    typeof document !== 'object' ||
+    (document as { formatVersion?: unknown }).formatVersion !== 1
+  )
+    throw new ApiError(
+      400,
+      'scenario_format_refused',
+      'Version de format refusée.',
+    );
+  return {
+    scenarioId,
+    title,
+    parentVersionId,
+    checksum: body.checksum,
+    sizeBytes: bytes.byteLength,
+    contentType: CLOUD_CONTENT_TYPE,
+    format: 'scenario-v1',
+    origin: body.origin as CloudSyncRequest['origin'],
+    content: body.content,
+  };
 }
 
 function jsonResponse(
@@ -468,6 +620,13 @@ export function createCommercialWorker(
       let webhook: 'none' | 'processed' | 'replayed' | 'failed' = 'none';
       let ai: 'none' | 'succeeded' | 'replayed' | 'released' | 'uncertain' =
         'none';
+      let cloud:
+        | 'none'
+        | 'synced'
+        | 'replayed'
+        | 'conflict'
+        | 'restored'
+        | 'deleted' = 'none';
 
       try {
         validateOrigin(origin, dependencies.allowedOrigins);
@@ -491,7 +650,8 @@ export function createCommercialWorker(
           return response;
         }
 
-        if (!API_ROUTES.has(url.pathname))
+        const normalizedRoute = normalizeApiRoute(url.pathname);
+        if (normalizedRoute === 'unknown')
           throw new ApiError(404, 'route_not_found', 'Route introuvable.');
         if (request.method !== 'GET' && request.method !== 'POST')
           throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
@@ -502,7 +662,7 @@ export function createCommercialWorker(
         );
         if (
           !(await dependencies.rateLimiter.allow(
-            `ingress:${sourceHash}:${url.pathname}`,
+            `ingress:${sourceHash}:${normalizedRoute}`,
             Date.now(),
           ))
         )
@@ -601,11 +761,237 @@ export function createCommercialWorker(
 
         if (
           !(await dependencies.rateLimiter.allow(
-            `${profile.id}:${request.method}:${url.pathname}`,
+            `${profile.id}:${request.method}:${normalizedRoute}`,
             Date.now(),
           ))
         ) {
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
+        }
+
+        const cloudRoute = cloudPath(url.pathname);
+        if (cloudRoute) {
+          if (
+            !dependencies.cloudRepository ||
+            !dependencies.scenarioStorage ||
+            !dependencies.cloudIdempotencyPepper ||
+            !dependencies.cloudPolicy
+          )
+            throw new ApiError(
+              503,
+              'cloud_unconfigured',
+              'Synchronisation cloud indisponible.',
+            );
+          const mutation = request.method === 'POST';
+          const contextHeader = readCloudHeaders(request, mutation);
+          const context = {
+            profileId: profile.id,
+            fingerprintHash: await hashFingerprint(
+              contextHeader.deviceFingerprint,
+              dependencies.deviceFingerprintPepper,
+            ),
+            platform: contextHeader.platform,
+            clientVersion: contextHeader.clientVersion,
+          };
+          if (
+            request.method === 'GET' &&
+            cloudRoute.route === '/v5/scenarios'
+          ) {
+            const scenarios = await dependencies.cloudRepository.list(context);
+            status = 200;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                scenarios,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (
+            request.method === 'GET' &&
+            cloudRoute.route === '/v5/scenarios/:id/versions'
+          ) {
+            const versions = await dependencies.cloudRepository.versions(
+              context,
+              cloudRoute.scenarioId!,
+            );
+            status = 200;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                versions,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (
+            request.method === 'GET' &&
+            cloudRoute.route ===
+              '/v5/scenarios/:id/versions/:versionId/download'
+          ) {
+            const key = await dependencies.cloudRepository.storageKey(
+              context,
+              cloudRoute.scenarioId!,
+              cloudRoute.versionId!,
+            );
+            const download =
+              await dependencies.scenarioStorage.temporaryDownload({
+                key,
+                profileId: profile.id,
+                scenarioId: cloudRoute.scenarioId!,
+                expiresInSeconds: dependencies.cloudPolicy.downloadTtlSeconds,
+              });
+            status = 200;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                download,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            cloudRoute.route === '/v5/scenarios/sync'
+          ) {
+            // Reject rights/version/device before accepting any object bytes.
+            await dependencies.cloudRepository.authorize(context);
+            const sync = await readCloudSync(
+              request,
+              dependencies.cloudPolicy.maximumBodyBytes,
+            );
+            const { content, ...metadata } = sync;
+            const idempotencyHash = await hashFingerprint(
+              `${profile.id}:${contextHeader.idempotencyKey}`,
+              dependencies.cloudIdempotencyPepper,
+            );
+            const requestFingerprint = await sha256Hex(
+              new TextEncoder().encode(canonicalJson(metadata)),
+            );
+            const accountScope = await hashFingerprint(
+              profile.id,
+              dependencies.cloudIdempotencyPepper,
+            );
+            const storageKey = `${accountScope}/scenarios/${sync.scenarioId}/objects/${sync.checksum}.scenario`;
+            await dependencies.scenarioStorage.put({
+              key: storageKey,
+              bytes: new TextEncoder().encode(content),
+              contentType: sync.contentType,
+              checksum: sync.checksum,
+            });
+            const result = await dependencies.cloudRepository.sync({
+              context,
+              request: metadata,
+              storageKey,
+              idempotencyHash,
+              requestFingerprint,
+              requestId,
+            });
+            const download =
+              await dependencies.scenarioStorage.temporaryDownload({
+                key: storageKey,
+                profileId: profile.id,
+                scenarioId: sync.scenarioId,
+                expiresInSeconds: dependencies.cloudPolicy.downloadTtlSeconds,
+              });
+            cloud = result.replayed ? 'replayed' : 'synced';
+            status = result.replayed ? 200 : 201;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                ...result,
+                download,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            cloudRoute.route === '/v5/scenarios/:id/restore'
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['versionId']);
+            const versionId = uuid(body.versionId, 'invalid_version_id');
+            const idempotencyHash = await hashFingerprint(
+              `${profile.id}:${contextHeader.idempotencyKey}`,
+              dependencies.cloudIdempotencyPepper,
+            );
+            const result = await dependencies.cloudRepository.restore({
+              context,
+              scenarioId: cloudRoute.scenarioId!,
+              versionId,
+              idempotencyHash,
+              requestId,
+            });
+            const download =
+              await dependencies.scenarioStorage.temporaryDownload({
+                key: result.storageKey,
+                profileId: profile.id,
+                scenarioId: cloudRoute.scenarioId!,
+                expiresInSeconds: dependencies.cloudPolicy.downloadTtlSeconds,
+              });
+            const { storageKey: _storageKey, ...publicResult } = result;
+            cloud = result.replayed ? 'replayed' : 'restored';
+            status = result.replayed ? 200 : 201;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                ...publicResult,
+                download,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            cloudRoute.route === '/v5/scenarios/:id/delete'
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, []);
+            const idempotencyHash = await hashFingerprint(
+              `${profile.id}:${contextHeader.idempotencyKey}`,
+              dependencies.cloudIdempotencyPepper,
+            );
+            const scenario = await dependencies.cloudRepository.softDelete({
+              context,
+              scenarioId: cloudRoute.scenarioId!,
+              idempotencyHash,
+              requestId,
+            });
+            cloud = 'deleted';
+            status = 200;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v6',
+                scenario,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
         }
 
         if (
@@ -1213,7 +1599,26 @@ export function createCommercialWorker(
           error instanceof ApiError
             ? error
             : error instanceof CommercialRepositoryError
-              ? new ApiError(error.status, error.code, error.message)
+              ? new ApiError(
+                  error.status,
+                  error.code,
+                  error.message,
+                  error instanceof ScenarioConflictError
+                    ? {
+                        conflict: {
+                          code: 'scenario_parent_conflict',
+                          scenarioId: error.scenarioId,
+                          localParentVersionId: error.localParentVersionId,
+                          remoteVersionId: error.remoteVersionId,
+                          options: [
+                            'keep_local',
+                            'download_remote',
+                            'create_copy',
+                          ],
+                        },
+                      }
+                    : undefined,
+                )
               : error instanceof StripeWebhookError
                 ? new ApiError(400, 'stripe_signature_invalid', error.message)
                 : error instanceof AuthenticationError
@@ -1225,6 +1630,7 @@ export function createCommercialWorker(
             code: apiError.code,
             message: apiError.message,
             request_id: requestId,
+            ...apiError.details,
           },
           status,
           requestId,
@@ -1236,13 +1642,14 @@ export function createCommercialWorker(
           (dependencies.telemetry ?? structuredTelemetry).record({
             request_id: requestId,
             method: request.method,
-            route: API_ROUTES.has(url.pathname) ? url.pathname : 'unknown',
+            route: normalizeApiRoute(url.pathname),
             status,
             duration_ms: Math.max(0, Math.round(performance.now() - startedAt)),
             outcome:
               status >= 500 ? 'unavailable' : status >= 400 ? 'rejected' : 'ok',
             webhook,
             ai,
+            cloud,
           });
         } catch {
           /* Observability failure must not replay a successful mutation. */

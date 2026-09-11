@@ -108,6 +108,8 @@ export class LocalTestRepository implements CommercialRepository {
           { code: 'ai_short_action', enabled: true, value: null },
           { code: 'ai_pdf_import', enabled: true, value: null },
           { code: 'cloud.sync', enabled: true, value: null },
+          { code: 'cloud_sync', enabled: true, value: null },
+          { code: 'scenario_versions', enabled: true, value: null },
         ],
         { ai_short_action: 10, ai_pdf_import: 4 },
       ),

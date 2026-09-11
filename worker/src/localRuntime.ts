@@ -12,6 +12,10 @@ import { createCommercialWorker } from './worker.ts';
 import type { WorkerDependencies } from './types.ts';
 import { DeterministicLocalAiProvider } from './localAiProvider.ts';
 import { LocalAiQuotaRepository } from './localAiQuotaRepository.ts';
+import {
+  LocalCloudScenarioRepository,
+  LocalScenarioObjectStorage,
+} from './cloudSync.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -22,6 +26,8 @@ export async function createLocalRuntime(
   repository.logout = (token?: string) => auth.logout(token ?? '');
   const billing = new LocalBillingRepository(repository);
   const selector = new LocalTestTokenVerifier();
+  const cloudRepository = new LocalCloudScenarioRepository(repository, now);
+  const scenarioStorage = new LocalScenarioObjectStorage(now);
   const worker = createCommercialWorker({
     environment: 'test',
     allowedOrigins: [
@@ -55,7 +61,18 @@ export async function createLocalRuntime(
       maxTranslationSegments: 2_000,
       maxResponseBytes: 2_097_152,
     },
+    cloudRepository,
+    scenarioStorage,
+    cloudIdempotencyPepper: 'ephemeral-local-cloud-idempotency-pepper',
+    cloudPolicy: { maximumBodyBytes: 4_194_304, downloadTtlSeconds: 300 },
     ...overrides,
   });
-  return { repository, auth, billing, worker };
+  return {
+    repository,
+    auth,
+    billing,
+    cloudRepository,
+    scenarioStorage,
+    worker,
+  };
 }

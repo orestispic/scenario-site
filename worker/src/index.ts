@@ -10,6 +10,10 @@ import { StripeRestGateway } from './stripe.ts';
 import { StripeWebhookVerifier } from './stripeWebhook.ts';
 import { OpenAiResponsesProvider } from './aiProvider.ts';
 import { SupabaseAiQuotaRepository } from './aiQuota.ts';
+import {
+  SupabaseCloudScenarioRepository,
+  SupabaseScenarioObjectStorage,
+} from './cloudSync.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -135,6 +139,29 @@ const productionWorker = {
             2_097_152,
             1_024,
             4_194_304,
+          ),
+        },
+        cloudRepository: new SupabaseCloudScenarioRepository(environment),
+        scenarioStorage: new SupabaseScenarioObjectStorage(
+          environment,
+          environment.CLOUD_STORAGE_BUCKET ?? 'scenario-documents',
+        ),
+        cloudIdempotencyPepper: required(
+          environment,
+          'CLOUD_IDEMPOTENCY_PEPPER',
+        ),
+        cloudPolicy: {
+          maximumBodyBytes: boundedInteger(
+            environment.CLOUD_MAX_BODY_BYTES,
+            4_194_304,
+            65_536,
+            8_388_608,
+          ),
+          downloadTtlSeconds: boundedInteger(
+            environment.CLOUD_DOWNLOAD_TTL_SECONDS,
+            300,
+            30,
+            900,
           ),
         },
       });

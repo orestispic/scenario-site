@@ -55,6 +55,12 @@ Fonctionnel localement : protocole HTTP, trois comptes, présence, heartbeat/tim
 
 Simulé : droits métier, stockage Studio, transport temps réel, snapshots et diffusion applicative utilisent toujours des adaptateurs mémoire déterministes. Supabase Auth, PostgreSQL, les migrations, RLS et RPC de sécurité ont en revanche été exécutés réellement dans la pile locale Docker.
 
+### Démonstration locale prête à l'emploi
+
+L'entrée strictement locale `worker/src/local-test.ts` initialise automatiquement un « Studio de démonstration » et son « Scénario de démonstration » avec une version racine. Les profils synthétiques reçoivent les rôles `studio` owner, `author` editor et `discovery` viewer. La fixture passe par les routes authentifiées cloud et Studio, puis supprime les appareils techniques d'initialisation ; chaque profil doit donc activer normalement l'appareil utilisé dans l'interface. Rien n'est écrit dans Supabase et toutes les données disparaissent au redémarrage du Worker local.
+
+Cette fixture n'est importée ni par l'entrée de production ni par la configuration préproduction. Pour l'essayer, démarrer `npm.cmd run start:api:local`, ouvrir l'application avec `VITE_SCENARIO_CLIENT_VERSION=0.1.7`, choisir le profil `studio`, activer l'appareil puis ouvrir « Studio de démonstration ».
+
 Encore bloqué faute d’infrastructure isolée fournie : stockage objet test, Durable Object Cloudflare, mesure réelle de diffusion et invalidation push. Aucun compte ni ressource externe n’a été créé.
 
 Commandes validées sur la pile locale jetable :

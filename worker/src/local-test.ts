@@ -1,9 +1,13 @@
 import { createLocalRuntime } from './localRuntime.ts';
+import { seedLocalDemoStudio } from './localDemoFixture.ts';
 type LocalRuntime = Awaited<ReturnType<typeof createLocalRuntime>>;
 let localWorker: Promise<LocalRuntime> | null = null;
 
 async function getLocalWorker() {
-  localWorker ??= createLocalRuntime();
+  localWorker ??= createLocalRuntime().then(async (runtime) => {
+    await seedLocalDemoStudio(runtime);
+    return runtime;
+  });
   return localWorker;
 }
 

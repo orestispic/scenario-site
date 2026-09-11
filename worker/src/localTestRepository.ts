@@ -259,6 +259,19 @@ export class LocalTestRepository implements CommercialRepository {
     device.status = 'revoked';
   }
 
+  removeLocalFixtureDevice(profileId: string, deviceId: string): void {
+    const state = this.requireState(profileId);
+    const index = state.devices.findIndex((device) => device.id === deviceId);
+    if (index < 0) return;
+    state.devices.splice(index, 1);
+    for (const [
+      fingerprintHash,
+      mappedDeviceId,
+    ] of state.deviceIdsByFingerprint)
+      if (mappedDeviceId === deviceId)
+        state.deviceIdsByFingerprint.delete(fingerprintHash);
+  }
+
   async getUsage(profileId: string): Promise<UsageView[]> {
     this.requireState(profileId);
     const totals = new Map<string, number>();

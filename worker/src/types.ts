@@ -18,6 +18,7 @@ import type {
   CloudScenarioRepository,
   ScenarioObjectStorage,
 } from './cloudSync.ts';
+import type { StudioNotificationProvider, StudioRepository } from './studio.ts';
 
 export interface WorkerEnvironment {
   SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
@@ -51,6 +52,9 @@ export interface WorkerEnvironment {
   CLOUD_STORAGE_BUCKET?: string;
   CLOUD_MAX_BODY_BYTES?: string;
   CLOUD_DOWNLOAD_TTL_SECONDS?: string;
+  STUDIO_INVITATION_PEPPER: string;
+  STUDIO_INVITATION_TTL_SECONDS?: string;
+  STUDIO_EVENT_PAGE_SIZE?: string;
 }
 
 export interface AuthenticatedIdentity {
@@ -154,5 +158,12 @@ export type WorkerDependencies = {
   cloudPolicy?: {
     maximumBodyBytes: number;
     downloadTtlSeconds: number;
+  };
+  studioRepository?: StudioRepository;
+  studioNotifier?: StudioNotificationProvider;
+  studioInvitationPepper?: string;
+  studioPolicy?: {
+    invitationTtlSeconds: number;
+    eventPageSize: number;
   };
 };

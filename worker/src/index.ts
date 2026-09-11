@@ -14,6 +14,7 @@ import {
   SupabaseCloudScenarioRepository,
   SupabaseScenarioObjectStorage,
 } from './cloudSync.ts';
+import { SupabaseStudioRepository } from './studio.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -162,6 +163,32 @@ const productionWorker = {
             300,
             30,
             900,
+          ),
+        },
+        studioRepository: new SupabaseStudioRepository(environment),
+        studioInvitationPepper: required(
+          environment,
+          'STUDIO_INVITATION_PEPPER',
+        ),
+        studioNotifier: {
+          async deliver() {
+            throw new Error(
+              'External Studio notification provider not configured.',
+            );
+          },
+        },
+        studioPolicy: {
+          invitationTtlSeconds: boundedInteger(
+            environment.STUDIO_INVITATION_TTL_SECONDS,
+            86_400,
+            900,
+            604_800,
+          ),
+          eventPageSize: boundedInteger(
+            environment.STUDIO_EVENT_PAGE_SIZE,
+            100,
+            1,
+            500,
           ),
         },
       });

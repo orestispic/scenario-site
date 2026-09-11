@@ -423,6 +423,10 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
     this.memberships.set(scenarioId, map);
   }
 
+  removeMembership(scenarioId: string, profileId: string): void {
+    this.memberships.get(scenarioId)?.delete(profileId);
+  }
+
   private role(
     scenario: CloudScenario & { ownerId: string },
     profileId: string,

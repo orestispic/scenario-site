@@ -22,6 +22,7 @@ import {
 import type { AiReservation } from './aiQuota.ts';
 import type { CloudSyncRequest } from '../../lib/commercial/contracts-v6.ts';
 import { CLOUD_CONTENT_TYPE, ScenarioConflictError } from './cloudSync.ts';
+import type { StudioContext } from './studio.ts';
 
 class ApiError extends Error {
   constructor(
@@ -51,6 +52,45 @@ function cloudPath(
   if (!route.startsWith('/v5/')) return null;
   const values = pathname.match(new RegExp(UUID_PATTERN, 'ig')) ?? [];
   return { route, scenarioId: values[0], versionId: values[1] };
+}
+
+function studioPath(pathname: string): {
+  route: string;
+  studioId?: string;
+  invitationId?: string;
+  memberId?: string;
+} | null {
+  const route = normalizeApiRoute(pathname);
+  if (!route.startsWith('/v6/')) return null;
+  const values = pathname.match(new RegExp(UUID_PATTERN, 'ig')) ?? [];
+  return {
+    route,
+    studioId: values[0],
+    invitationId: route.includes('/invitations/:') ? values[1] : undefined,
+    memberId: route.includes('/members/:') ? values[1] : undefined,
+  };
+}
+
+async function strongInvitationToken(
+  studioId: string,
+  idempotencyKey: string,
+  pepper: string,
+): Promise<string> {
+  // A secret-keyed 256-bit value is reproducible for safe delivery retries but
+  // infeasible to predict from the client-controlled idempotency key.
+  return `${studioId}.${await hashFingerprint(`${studioId}:${idempotencyKey}`, pepper)}`;
+}
+
+function readInvitationEmail(body: Record<string, unknown>): string {
+  const email = readString(body, 'email', 254).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new ApiError(400, 'invalid_email', 'Adresse invalide.');
+  return email;
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  return `${local.slice(0, 1)}***@${domain}`;
 }
 
 function readCloudHeaders(request: Request, mutation: boolean) {
@@ -627,6 +667,8 @@ export function createCommercialWorker(
         | 'conflict'
         | 'restored'
         | 'deleted' = 'none';
+      let studio: 'none' | 'listed' | 'mutated' | 'replayed' | 'catchup' =
+        'none';
 
       try {
         validateOrigin(origin, dependencies.allowedOrigins);
@@ -768,6 +810,283 @@ export function createCommercialWorker(
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
         }
 
+        const studioRoute = studioPath(url.pathname);
+        if (studioRoute) {
+          if (
+            !dependencies.studioRepository ||
+            !dependencies.studioNotifier ||
+            !dependencies.studioInvitationPepper ||
+            !dependencies.studioPolicy
+          )
+            throw new ApiError(
+              503,
+              'studio_unconfigured',
+              'Studio indisponible.',
+            );
+          const mutation = request.method === 'POST';
+          const headers = readCloudHeaders(request, mutation);
+          const context: StudioContext = {
+            profileId: profile.id,
+            emailHash: await hashFingerprint(
+              profile.account.email.trim().toLowerCase(),
+              dependencies.studioInvitationPepper,
+            ),
+            displayName: profile.account.displayName ?? 'Membre Studio',
+            fingerprintHash: await hashFingerprint(
+              headers.deviceFingerprint,
+              dependencies.deviceFingerprintPepper,
+            ),
+            platform: headers.platform,
+            clientVersion: headers.clientVersion,
+          };
+          const idempotencyHash = mutation
+            ? await hashFingerprint(
+                `${profile.id}:${headers.idempotencyKey}`,
+                dependencies.studioInvitationPepper,
+              )
+            : '';
+          const response = (
+            value: Record<string, unknown>,
+            responseStatus = 200,
+          ) => {
+            status = responseStatus;
+            studio =
+              value.replayed === true
+                ? 'replayed'
+                : mutation
+                  ? 'mutated'
+                  : studioRoute.route.endsWith('/events')
+                    ? 'catchup'
+                    : 'listed';
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v7',
+                ...value,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          };
+          if (request.method === 'GET' && studioRoute.route === '/v6/studios') {
+            const [studios, pending] = await Promise.all([
+              dependencies.studioRepository.list(context),
+              dependencies.studioRepository.receivedInvitations(context),
+            ]);
+            const receivedInvitations = pending.map((invitation) => ({
+              ...invitation,
+              ...(dependencies.environment === 'test' &&
+              dependencies.studioNotifier!.developmentToken
+                ? {
+                    developmentToken:
+                      dependencies.studioNotifier!.developmentToken(
+                        invitation.id,
+                        context.emailHash,
+                      ),
+                  }
+                : {}),
+            }));
+            return response({ studios, receivedInvitations });
+          }
+          if (
+            request.method === 'POST' &&
+            studioRoute.route === '/v6/studios'
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['scenarioId', 'name']);
+            const result = await dependencies.studioRepository.create({
+              context,
+              scenarioId: uuid(body.scenarioId),
+              name: readString(body, 'name', 120),
+              idempotencyHash,
+              requestId,
+            });
+            return response(result, result.replayed ? 200 : 201);
+          }
+          if (
+            request.method === 'GET' &&
+            studioRoute.route === '/v6/studios/:id'
+          ) {
+            return response(
+              await dependencies.studioRepository.detail(
+                context,
+                studioRoute.studioId!,
+              ),
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            studioRoute.route === '/v6/studios/:id/invitations'
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['email', 'role']);
+            const email = readInvitationEmail(body);
+            if (body.role !== 'editor' && body.role !== 'viewer')
+              throw new ApiError(400, 'invalid_studio_role', 'Rôle refusé.');
+            const token = await strongInvitationToken(
+              studioRoute.studioId!,
+              headers.idempotencyKey,
+              dependencies.studioInvitationPepper,
+            );
+            const recipientEmailHash = await hashFingerprint(
+              email,
+              dependencies.studioInvitationPepper,
+            );
+            const tokenHash = await hashFingerprint(
+              token,
+              dependencies.studioInvitationPepper,
+            );
+            const expiresAt = new Date(
+              Date.now() +
+                dependencies.studioPolicy.invitationTtlSeconds * 1_000,
+            ).toISOString();
+            const result = await dependencies.studioRepository.invite({
+              context,
+              studioId: studioRoute.studioId!,
+              recipientEmailHash,
+              recipientMasked: maskEmail(email),
+              role: body.role,
+              tokenHash,
+              expiresAt,
+              idempotencyHash,
+              requestId,
+            });
+            try {
+              // Providers deduplicate by invitationId. Replays deliberately retry
+              // delivery with the same derived token after an uncertain outage.
+              await dependencies.studioNotifier.deliver({
+                invitationId: result.invitation.id,
+                recipientEmailHash,
+                token,
+                expiresAt: result.invitation.expiresAt,
+              });
+            } catch {
+              console.warn(
+                JSON.stringify({
+                  event: 'studio.notification_unavailable',
+                  request_id: requestId,
+                }),
+              );
+            }
+            return response(result, result.replayed ? 200 : 201);
+          }
+          if (
+            request.method === 'POST' &&
+            [
+              '/v6/studio-invitations/accept',
+              '/v6/studio-invitations/decline',
+            ].includes(studioRoute.route)
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['token']);
+            const token = readString(body, 'token', 256);
+            if (
+              !new RegExp(`^${UUID_PATTERN}\\.[0-9a-f]{64}$`, 'i').test(token)
+            )
+              throw new ApiError(
+                400,
+                'invalid_invitation_token',
+                'Invitation invalide.',
+              );
+            const input = {
+              context,
+              tokenHash: await hashFingerprint(
+                token,
+                dependencies.studioInvitationPepper,
+              ),
+              idempotencyHash,
+              requestId,
+            };
+            const result = studioRoute.route.endsWith('/accept')
+              ? await dependencies.studioRepository.accept(input)
+              : await dependencies.studioRepository.decline(input);
+            return response(result, result.replayed ? 200 : 201);
+          }
+          if (
+            request.method === 'POST' &&
+            studioRoute.route ===
+              '/v6/studios/:id/invitations/:invitationId/revoke'
+          ) {
+            assertExactKeys(await readObjectBody(request), []);
+            return response(
+              await dependencies.studioRepository.revokeInvitation({
+                context,
+                studioId: studioRoute.studioId!,
+                invitationId: studioRoute.invitationId!,
+                idempotencyHash,
+                requestId,
+              }),
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            studioRoute.route === '/v6/studios/:id/members/:profileId/role'
+          ) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['role']);
+            if (!['owner', 'editor', 'viewer'].includes(String(body.role)))
+              throw new ApiError(400, 'invalid_studio_role', 'Rôle refusé.');
+            return response(
+              await dependencies.studioRepository.changeRole({
+                context,
+                studioId: studioRoute.studioId!,
+                profileId: studioRoute.memberId!,
+                role: body.role as 'owner' | 'editor' | 'viewer',
+                idempotencyHash,
+                requestId,
+              }),
+            );
+          }
+          if (
+            request.method === 'POST' &&
+            studioRoute.route === '/v6/studios/:id/members/:profileId/remove'
+          ) {
+            assertExactKeys(await readObjectBody(request), []);
+            return response(
+              await dependencies.studioRepository.removeMember({
+                context,
+                studioId: studioRoute.studioId!,
+                profileId: studioRoute.memberId!,
+                idempotencyHash,
+                requestId,
+              }),
+            );
+          }
+          if (
+            request.method === 'GET' &&
+            studioRoute.route === '/v6/studios/:id/events'
+          ) {
+            const after = Number(url.searchParams.get('after') ?? 0);
+            const limit = Number(
+              url.searchParams.get('limit') ??
+                dependencies.studioPolicy.eventPageSize,
+            );
+            if (
+              !Number.isSafeInteger(after) ||
+              after < 0 ||
+              !Number.isSafeInteger(limit) ||
+              limit < 1 ||
+              limit > dependencies.studioPolicy.eventPageSize
+            )
+              throw new ApiError(
+                400,
+                'invalid_studio_cursor',
+                'Curseur invalide.',
+              );
+            return response(
+              await dependencies.studioRepository.events(
+                context,
+                studioRoute.studioId!,
+                after,
+                limit,
+              ),
+            );
+          }
+          throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+        }
+
         const cloudRoute = cloudPath(url.pathname);
         if (cloudRoute) {
           if (
@@ -898,6 +1217,22 @@ export function createCommercialWorker(
               requestFingerprint,
               requestId,
             });
+            if (!result.replayed && dependencies.studioRepository) {
+              try {
+                await dependencies.studioRepository.publishScenarioVersion({
+                  scenarioId: sync.scenarioId,
+                  versionId: result.version.id,
+                  requestId,
+                });
+              } catch {
+                console.warn(
+                  JSON.stringify({
+                    event: 'studio.event_deferred',
+                    request_id: requestId,
+                  }),
+                );
+              }
+            }
             const download =
               await dependencies.scenarioStorage.temporaryDownload({
                 key: storageKey,
@@ -938,6 +1273,22 @@ export function createCommercialWorker(
               idempotencyHash,
               requestId,
             });
+            if (!result.replayed && dependencies.studioRepository) {
+              try {
+                await dependencies.studioRepository.publishScenarioVersion({
+                  scenarioId: cloudRoute.scenarioId!,
+                  versionId: result.version.id,
+                  requestId,
+                });
+              } catch {
+                console.warn(
+                  JSON.stringify({
+                    event: 'studio.event_deferred',
+                    request_id: requestId,
+                  }),
+                );
+              }
+            }
             const download =
               await dependencies.scenarioStorage.temporaryDownload({
                 key: result.storageKey,
@@ -1650,6 +2001,7 @@ export function createCommercialWorker(
             webhook,
             ai,
             cloud,
+            studio,
           });
         } catch {
           /* Observability failure must not replay a successful mutation. */

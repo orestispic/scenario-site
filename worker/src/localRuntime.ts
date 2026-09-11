@@ -16,6 +16,10 @@ import {
   LocalCloudScenarioRepository,
   LocalScenarioObjectStorage,
 } from './cloudSync.ts';
+import {
+  DeterministicLocalStudioNotifier,
+  LocalStudioRepository,
+} from './studio.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -28,6 +32,12 @@ export async function createLocalRuntime(
   const selector = new LocalTestTokenVerifier();
   const cloudRepository = new LocalCloudScenarioRepository(repository, now);
   const scenarioStorage = new LocalScenarioObjectStorage(now);
+  const studioNotifier = new DeterministicLocalStudioNotifier();
+  const studioRepository = new LocalStudioRepository(
+    repository,
+    cloudRepository,
+    now,
+  );
   const worker = createCommercialWorker({
     environment: 'test',
     allowedOrigins: [
@@ -65,6 +75,10 @@ export async function createLocalRuntime(
     scenarioStorage,
     cloudIdempotencyPepper: 'ephemeral-local-cloud-idempotency-pepper',
     cloudPolicy: { maximumBodyBytes: 4_194_304, downloadTtlSeconds: 300 },
+    studioRepository,
+    studioNotifier,
+    studioInvitationPepper: 'ephemeral-local-studio-invitation-pepper',
+    studioPolicy: { invitationTtlSeconds: 86_400, eventPageSize: 100 },
     ...overrides,
   });
   return {
@@ -73,6 +87,8 @@ export async function createLocalRuntime(
     billing,
     cloudRepository,
     scenarioStorage,
+    studioRepository,
+    studioNotifier,
     worker,
   };
 }

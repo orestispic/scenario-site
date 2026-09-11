@@ -24,6 +24,15 @@ export const API_ROUTES = new Set([
   '/v5/scenarios/:id/restore',
   '/v5/scenarios/:id/delete',
   '/v5/scenarios/:id/versions/:versionId/download',
+  '/v6/studios',
+  '/v6/studios/:id',
+  '/v6/studios/:id/invitations',
+  '/v6/studios/:id/invitations/:invitationId/revoke',
+  '/v6/studios/:id/members/:profileId/role',
+  '/v6/studios/:id/members/:profileId/remove',
+  '/v6/studios/:id/events',
+  '/v6/studio-invitations/accept',
+  '/v6/studio-invitations/decline',
 ]);
 const UUID =
   '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
@@ -41,6 +50,28 @@ export function normalizeApiRoute(pathname: string): string {
     )
   )
     return '/v5/scenarios/:id/versions/:versionId/download';
+  if (new RegExp(`^/v6/studios/${UUID}$`, 'i').test(pathname))
+    return '/v6/studios/:id';
+  if (new RegExp(`^/v6/studios/${UUID}/invitations$`, 'i').test(pathname))
+    return '/v6/studios/:id/invitations';
+  if (
+    new RegExp(`^/v6/studios/${UUID}/invitations/${UUID}/revoke$`, 'i').test(
+      pathname,
+    )
+  )
+    return '/v6/studios/:id/invitations/:invitationId/revoke';
+  if (
+    new RegExp(`^/v6/studios/${UUID}/members/${UUID}/role$`, 'i').test(pathname)
+  )
+    return '/v6/studios/:id/members/:profileId/role';
+  if (
+    new RegExp(`^/v6/studios/${UUID}/members/${UUID}/remove$`, 'i').test(
+      pathname,
+    )
+  )
+    return '/v6/studios/:id/members/:profileId/remove';
+  if (new RegExp(`^/v6/studios/${UUID}/events$`, 'i').test(pathname))
+    return '/v6/studios/:id/events';
   return 'unknown';
 }
 export interface RequestMetric {
@@ -53,6 +84,7 @@ export interface RequestMetric {
   webhook: 'none' | 'processed' | 'replayed' | 'failed';
   ai?: 'none' | 'succeeded' | 'replayed' | 'released' | 'uncertain';
   cloud?: 'none' | 'synced' | 'replayed' | 'conflict' | 'restored' | 'deleted';
+  studio?: 'none' | 'listed' | 'mutated' | 'replayed' | 'catchup';
 }
 export interface Telemetry {
   record(metric: RequestMetric): void;
@@ -74,6 +106,7 @@ export const structuredTelemetry: Telemetry = {
         webhook: metric.webhook,
         ai: metric.ai ?? 'none',
         cloud: metric.cloud ?? 'none',
+        studio: metric.studio ?? 'none',
       }),
     );
   },

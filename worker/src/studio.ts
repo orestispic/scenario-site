@@ -61,6 +61,11 @@ export class NoopStudioChannel implements StudioEventChannel {
 }
 
 export interface StudioRepository extends StudioEventChannel {
+  authorizeRealtime(
+    context: StudioContext,
+    studioId: string,
+    write: boolean,
+  ): Promise<{ studioId: string; scenarioId: string; role: StudioRole }>;
   list(context: StudioContext): Promise<StudioSpace[]>;
   detail(
     context: StudioContext,
@@ -173,6 +178,20 @@ export class LocalStudioRepository implements StudioRepository {
     private readonly cloud: CloudScenarioRepository,
     private readonly now: () => number = Date.now,
   ) {}
+
+  async authorizeRealtime(
+    context: StudioContext,
+    studioId: string,
+    write: boolean,
+  ) {
+    const role = await this.requireRole(
+      context,
+      studioId,
+      write ? ['owner', 'editor'] : undefined,
+    );
+    const studio = this.requireStudio(studioId);
+    return { studioId, scenarioId: studio.scenarioId, role };
+  }
 
   async list(context: StudioContext): Promise<StudioSpace[]> {
     await this.authorize(context);
@@ -657,6 +676,24 @@ export class SupabaseStudioRepository implements StudioRepository {
     private readonly environment: WorkerEnvironment,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
+  async authorizeRealtime(
+    context: StudioContext,
+    studioId: string,
+    write: boolean,
+  ) {
+    const detail = await this.detail(context, studioId);
+    if (write && detail.studio.role === 'viewer')
+      throw new CommercialRepositoryError(
+        403,
+        'studio_write_forbidden',
+        'Écriture Studio refusée.',
+      );
+    return {
+      studioId,
+      scenarioId: detail.studio.scenarioId,
+      role: detail.studio.role,
+    };
+  }
   list(context: StudioContext) {
     return this.rpc<StudioSpace[]>('list_studios', this.context(context));
   }

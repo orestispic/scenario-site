@@ -21,6 +21,14 @@ CLOUD_MAX_BODY_BYTES = "4194304"
 CLOUD_DOWNLOAD_TTL_SECONDS = "300"
 STUDIO_INVITATION_TTL_SECONDS = "86400"
 STUDIO_EVENT_PAGE_SIZE = "100"
+STUDIO_TICKET_TTL_SECONDS = "30"
+STUDIO_HEARTBEAT_SECONDS = "10"
+STUDIO_IDLE_TIMEOUT_SECONDS = "30"
+STUDIO_MAX_CONNECTION_SECONDS = "3600"
+STUDIO_MAX_CONNECTIONS = "32"
+STUDIO_MAX_PROFILE_CONNECTIONS = "3"
+STUDIO_MAX_OPERATION_BYTES = "65536"
+STUDIO_MAX_PENDING_EVENTS = "500"
 
 [[durable_objects.bindings]]
 name = "RATE_LIMITER"
@@ -40,6 +48,7 @@ invocation_logs = false
 
 # Supply separate Supabase TEST, Stripe TEST and signing secrets through the
 # secret manager, including CLOUD_IDEMPOTENCY_PEPPER and
-# STUDIO_INVITATION_PEPPER. The external notification provider remains
-# deliberately unconfigured in phase 7. No routes, account_id or
-# production resource is configured.
+# STUDIO_INVITATION_PEPPER and STUDIO_TICKET_PEPPER. The notification
+# provider and STUDIO_REALTIME_CHANNEL binding remain deliberately
+# unconfigured until isolated test infrastructure exists. No production
+# route, account_id or resource is configured.

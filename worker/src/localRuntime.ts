@@ -20,6 +20,7 @@ import {
   DeterministicLocalStudioNotifier,
   LocalStudioRepository,
 } from './studio.ts';
+import { DeterministicLocalRealtimeTransport } from './realtimeCollaboration.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -36,6 +37,24 @@ export async function createLocalRuntime(
   const studioRepository = new LocalStudioRepository(
     repository,
     cloudRepository,
+    now,
+  );
+  const realtimeTransport = new DeterministicLocalRealtimeTransport(
+    studioRepository,
+    'ephemeral-local-realtime-ticket-pepper',
+    {
+      ticketTtlSeconds: 30,
+      heartbeatIntervalSeconds: 10,
+      idleTimeoutSeconds: 30,
+      maximumConnectionSeconds: 3_600,
+      maximumConnectionsPerStudio: 32,
+      maximumConnectionsPerProfile: 3,
+      maximumOperationBytes: 65_536,
+      maximumPendingEvents: 500,
+      maximumEventsPerPoll: 100,
+      reconnectBackoffMaximumSeconds: 30,
+      tombstoneRetentionOperations: 100,
+    },
     now,
   );
   const worker = createCommercialWorker({
@@ -79,6 +98,7 @@ export async function createLocalRuntime(
     studioNotifier,
     studioInvitationPepper: 'ephemeral-local-studio-invitation-pepper',
     studioPolicy: { invitationTtlSeconds: 86_400, eventPageSize: 100 },
+    realtimeTransport,
     ...overrides,
   });
   return {
@@ -89,6 +109,7 @@ export async function createLocalRuntime(
     scenarioStorage,
     studioRepository,
     studioNotifier,
+    realtimeTransport,
     worker,
   };
 }

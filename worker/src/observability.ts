@@ -33,6 +33,13 @@ export const API_ROUTES = new Set([
   '/v6/studios/:id/events',
   '/v6/studio-invitations/accept',
   '/v6/studio-invitations/decline',
+  '/v7/studios/:id/realtime/tickets',
+  '/v7/studios/:id/realtime/connect',
+  '/v7/studios/:id/realtime/heartbeat',
+  '/v7/studios/:id/realtime/poll',
+  '/v7/studios/:id/realtime/operations',
+  '/v7/studios/:id/realtime/compact',
+  '/v7/studios/:id/realtime/disconnect',
 ]);
 const UUID =
   '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
@@ -72,6 +79,19 @@ export function normalizeApiRoute(pathname: string): string {
     return '/v6/studios/:id/members/:profileId/remove';
   if (new RegExp(`^/v6/studios/${UUID}/events$`, 'i').test(pathname))
     return '/v6/studios/:id/events';
+  for (const action of [
+    'tickets',
+    'connect',
+    'heartbeat',
+    'poll',
+    'operations',
+    'compact',
+    'disconnect',
+  ])
+    if (
+      new RegExp(`^/v7/studios/${UUID}/realtime/${action}$`, 'i').test(pathname)
+    )
+      return `/v7/studios/:id/realtime/${action}`;
   return 'unknown';
 }
 export interface RequestMetric {
@@ -85,6 +105,21 @@ export interface RequestMetric {
   ai?: 'none' | 'succeeded' | 'replayed' | 'released' | 'uncertain';
   cloud?: 'none' | 'synced' | 'replayed' | 'conflict' | 'restored' | 'deleted';
   studio?: 'none' | 'listed' | 'mutated' | 'replayed' | 'catchup';
+  realtime?:
+    | 'none'
+    | 'ticketed'
+    | 'connected'
+    | 'heartbeat'
+    | 'catchup'
+    | 'applied'
+    | 'conflict'
+    | 'compacted'
+    | 'closed'
+    | 'rejected';
+  connection_ref?: string;
+  connection_count?: number;
+  backlog_depth?: number;
+  broadcast_latency_ms?: number;
 }
 export interface Telemetry {
   record(metric: RequestMetric): void;
@@ -107,6 +142,20 @@ export const structuredTelemetry: Telemetry = {
         ai: metric.ai ?? 'none',
         cloud: metric.cloud ?? 'none',
         studio: metric.studio ?? 'none',
+        realtime: metric.realtime ?? 'none',
+        connection_ref: metric.connection_ref?.slice(0, 16) ?? 'none',
+        connection_count: Math.max(
+          0,
+          Math.min(10_000, metric.connection_count ?? 0),
+        ),
+        backlog_depth: Math.max(
+          0,
+          Math.min(100_000, metric.backlog_depth ?? 0),
+        ),
+        broadcast_latency_ms: Math.max(
+          0,
+          Math.min(300_000, metric.broadcast_latency_ms ?? 0),
+        ),
       }),
     );
   },

@@ -23,6 +23,7 @@ import type { AiReservation } from './aiQuota.ts';
 import type { CloudSyncRequest } from '../../lib/commercial/contracts-v6.ts';
 import { CLOUD_CONTENT_TYPE, ScenarioConflictError } from './cloudSync.ts';
 import type { StudioContext } from './studio.ts';
+import type { CollaborativeOperationRequest } from '../../lib/commercial/contracts-v8.ts';
 
 class ApiError extends Error {
   constructor(
@@ -68,6 +69,115 @@ function studioPath(pathname: string): {
     studioId: values[0],
     invitationId: route.includes('/invitations/:') ? values[1] : undefined,
     memberId: route.includes('/members/:') ? values[1] : undefined,
+  };
+}
+
+function realtimePath(
+  pathname: string,
+): { route: string; studioId: string } | null {
+  const route = normalizeApiRoute(pathname);
+  if (!route.startsWith('/v7/')) return null;
+  const studioId = pathname.match(new RegExp(UUID_PATTERN, 'i'))?.[0];
+  return studioId ? { route, studioId } : null;
+}
+
+function readCollaborationOperation(
+  value: unknown,
+): CollaborativeOperationRequest {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new ApiError(
+      400,
+      'collaboration_operation_invalid',
+      'Opération collaborative invalide.',
+    );
+  const body = value as Record<string, unknown>;
+  assertExactKeys(body, [
+    'studioId',
+    'scenarioId',
+    'baseVersionId',
+    'operationId',
+    'clientSequence',
+    'logicalClock',
+    'mutation',
+    'checksum',
+  ]);
+  const mutation = body.mutation;
+  if (!mutation || typeof mutation !== 'object' || Array.isArray(mutation))
+    throw new ApiError(
+      400,
+      'collaboration_operation_invalid',
+      'Mutation collaborative invalide.',
+    );
+  const change = mutation as Record<string, unknown>;
+  if (change.type === 'block.upsert') {
+    assertExactKeys(change, ['type', 'blockId', 'afterBlockId', 'block']);
+    if (
+      !change.block ||
+      typeof change.block !== 'object' ||
+      Array.isArray(change.block)
+    )
+      throw new ApiError(
+        400,
+        'collaboration_block_invalid',
+        'Bloc collaboratif invalide.',
+      );
+  } else if (change.type === 'block.delete')
+    assertExactKeys(change, ['type', 'blockId']);
+  else
+    throw new ApiError(
+      400,
+      'collaboration_mutation_refused',
+      'Type de mutation refusé.',
+    );
+  const blockId = readString(change, 'blockId', 128);
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(blockId))
+    throw new ApiError(
+      400,
+      'collaboration_block_invalid',
+      'Identifiant de bloc invalide.',
+    );
+  if (
+    change.type === 'block.upsert' &&
+    change.afterBlockId !== null &&
+    (typeof change.afterBlockId !== 'string' ||
+      !/^[A-Za-z0-9._:-]{1,128}$/.test(change.afterBlockId))
+  )
+    throw new ApiError(
+      400,
+      'collaboration_block_invalid',
+      'Position de bloc invalide.',
+    );
+  if (
+    !Number.isSafeInteger(body.clientSequence) ||
+    Number(body.clientSequence) < 1 ||
+    !Number.isSafeInteger(body.logicalClock) ||
+    Number(body.logicalClock) < 1
+  )
+    throw new ApiError(
+      400,
+      'collaboration_clock_invalid',
+      'Horloge collaborative invalide.',
+    );
+  if (
+    typeof body.checksum !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(body.checksum)
+  )
+    throw new ApiError(
+      400,
+      'collaboration_checksum_invalid',
+      'Checksum collaboratif invalide.',
+    );
+  return {
+    studioId: uuid(body.studioId, 'invalid_studio_id'),
+    scenarioId: uuid(body.scenarioId),
+    baseVersionId: uuid(body.baseVersionId, 'invalid_base_version_id'),
+    operationId: uuid(body.operationId, 'invalid_operation_id'),
+    clientSequence: Number(body.clientSequence),
+    logicalClock: Number(body.logicalClock),
+    mutation: structuredClone(
+      change,
+    ) as unknown as CollaborativeOperationRequest['mutation'],
+    checksum: body.checksum,
   };
 }
 
@@ -669,6 +779,21 @@ export function createCommercialWorker(
         | 'deleted' = 'none';
       let studio: 'none' | 'listed' | 'mutated' | 'replayed' | 'catchup' =
         'none';
+      let realtime:
+        | 'none'
+        | 'ticketed'
+        | 'connected'
+        | 'heartbeat'
+        | 'catchup'
+        | 'applied'
+        | 'conflict'
+        | 'compacted'
+        | 'closed'
+        | 'rejected' = 'none';
+      let connectionRef: string | undefined;
+      let connectionCount = 0;
+      let backlogDepth = 0;
+      let broadcastLatency = 0;
 
       try {
         validateOrigin(origin, dependencies.allowedOrigins);
@@ -808,6 +933,229 @@ export function createCommercialWorker(
           ))
         ) {
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
+        }
+
+        const realtimeRoute = realtimePath(url.pathname);
+        if (realtimeRoute) {
+          if (
+            !dependencies.studioRepository ||
+            !dependencies.realtimeTransport ||
+            !dependencies.studioInvitationPepper
+          )
+            throw new ApiError(
+              503,
+              'collaboration_unconfigured',
+              'Temps réel Studio indisponible.',
+            );
+          const headers = readCloudHeaders(request, true);
+          const context: StudioContext = {
+            profileId: profile.id,
+            emailHash: await hashFingerprint(
+              profile.account.email.trim().toLowerCase(),
+              dependencies.studioInvitationPepper,
+            ),
+            displayName: profile.account.displayName ?? 'Membre Studio',
+            fingerprintHash: await hashFingerprint(
+              headers.deviceFingerprint,
+              dependencies.deviceFingerprintPepper,
+            ),
+            platform: headers.platform,
+            clientVersion: headers.clientVersion,
+          };
+          await dependencies.studioRepository.authorizeRealtime(
+            context,
+            realtimeRoute.studioId,
+            realtimeRoute.route.endsWith('/operations') ||
+              realtimeRoute.route.endsWith('/compact'),
+          );
+          const common = {
+            context,
+            origin: origin ?? 'native:no-origin',
+            studioId: realtimeRoute.studioId,
+            requestId,
+          };
+          const respond = (
+            value: Record<string, unknown>,
+            responseStatus = 200,
+          ) => {
+            status = responseStatus;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v8',
+                ...value,
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          };
+          if (realtimeRoute.route.endsWith('/tickets')) {
+            assertExactKeys(await readObjectBody(request), []);
+            const value =
+              await dependencies.realtimeTransport.issueTicket(common);
+            realtime = 'ticketed';
+            return respond(value, 201);
+          }
+          if (realtimeRoute.route.endsWith('/connect')) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['ticket', 'afterCursor']);
+            const afterCursor = Number(body.afterCursor);
+            if (!Number.isSafeInteger(afterCursor) || afterCursor < 0)
+              throw new ApiError(
+                400,
+                'invalid_collaboration_cursor',
+                'Curseur invalide.',
+              );
+            const value = await dependencies.realtimeTransport.connect({
+              ...common,
+              ticket: readString(body, 'ticket', 256),
+              afterCursor,
+            });
+            connectionRef = (
+              await hashFingerprint(
+                value.connectionId,
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            connectionCount = value.presence.reduce(
+              (total, member) => total + member.connectionCount,
+              0,
+            );
+            realtime = 'connected';
+            return respond(value, 201);
+          }
+          if (realtimeRoute.route.endsWith('/heartbeat')) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['connectionId']);
+            const value = await dependencies.realtimeTransport.heartbeat({
+              ...common,
+              connectionId: uuid(body.connectionId, 'invalid_connection_id'),
+            });
+            connectionRef = (
+              await hashFingerprint(
+                String(body.connectionId),
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            connectionCount = value.presence.reduce(
+              (total, member) => total + member.connectionCount,
+              0,
+            );
+            realtime = 'heartbeat';
+            return respond(value);
+          }
+          if (realtimeRoute.route.endsWith('/poll')) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['connectionId', 'afterCursor']);
+            const afterCursor = Number(body.afterCursor);
+            if (!Number.isSafeInteger(afterCursor) || afterCursor < 0)
+              throw new ApiError(
+                400,
+                'invalid_collaboration_cursor',
+                'Curseur invalide.',
+              );
+            const value = await dependencies.realtimeTransport.poll({
+              ...common,
+              connectionId: uuid(body.connectionId, 'invalid_connection_id'),
+              afterCursor,
+            });
+            connectionRef = (
+              await hashFingerprint(
+                String(body.connectionId),
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            backlogDepth = value.syncLag;
+            realtime = 'catchup';
+            return respond(value);
+          }
+          if (realtimeRoute.route.endsWith('/operations')) {
+            const maximum =
+              'policy' in dependencies.realtimeTransport &&
+              typeof (
+                dependencies.realtimeTransport as {
+                  policy?: { maximumOperationBytes?: number };
+                }
+              ).policy?.maximumOperationBytes === 'number'
+                ? (
+                    dependencies.realtimeTransport as {
+                      policy: { maximumOperationBytes: number };
+                    }
+                  ).policy.maximumOperationBytes + 2_048
+                : 67_584;
+            const body = await readObjectBody(request, maximum);
+            assertExactKeys(body, ['connectionId', 'operation']);
+            const operation = readCollaborationOperation(body.operation);
+            if (operation.studioId !== realtimeRoute.studioId)
+              throw new ApiError(
+                400,
+                'collaboration_scope_invalid',
+                'Portée collaborative invalide.',
+              );
+            connectionRef = (
+              await hashFingerprint(
+                String(body.connectionId),
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            const broadcastStartedAt = performance.now();
+            const value = await dependencies.realtimeTransport.submit({
+              ...common,
+              connectionId: uuid(body.connectionId, 'invalid_connection_id'),
+              operation,
+              requestId,
+            });
+            broadcastLatency = Math.max(
+              0,
+              Math.round(performance.now() - broadcastStartedAt),
+            );
+            realtime = value.status === 'conflict' ? 'conflict' : 'applied';
+            return respond(value);
+          }
+          if (realtimeRoute.route.endsWith('/compact')) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['connectionId', 'parentVersionId']);
+            const value = await dependencies.realtimeTransport.compact({
+              ...common,
+              connectionId: uuid(body.connectionId, 'invalid_connection_id'),
+              parentVersionId: uuid(
+                body.parentVersionId,
+                'invalid_parent_version_id',
+              ),
+              idempotencyHash: await hashFingerprint(
+                `${profile.id}:${headers.idempotencyKey}:compact`,
+                dependencies.studioInvitationPepper,
+              ),
+              requestId,
+            });
+            connectionRef = (
+              await hashFingerprint(
+                String(body.connectionId),
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            realtime = 'compacted';
+            return respond(value, value.replayed ? 200 : 201);
+          }
+          if (realtimeRoute.route.endsWith('/disconnect')) {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['connectionId']);
+            await dependencies.realtimeTransport.disconnect({
+              ...common,
+              connectionId: uuid(body.connectionId, 'invalid_connection_id'),
+            });
+            connectionRef = (
+              await hashFingerprint(
+                String(body.connectionId),
+                dependencies.deviceFingerprintPepper,
+              )
+            ).slice(0, 16);
+            realtime = 'closed';
+            return respond({ closed: true });
+          }
+          throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
         }
 
         const studioRoute = studioPath(url.pathname);
@@ -1028,31 +1376,37 @@ export function createCommercialWorker(
             assertExactKeys(body, ['role']);
             if (!['owner', 'editor', 'viewer'].includes(String(body.role)))
               throw new ApiError(400, 'invalid_studio_role', 'Rôle refusé.');
-            return response(
-              await dependencies.studioRepository.changeRole({
-                context,
-                studioId: studioRoute.studioId!,
-                profileId: studioRoute.memberId!,
-                role: body.role as 'owner' | 'editor' | 'viewer',
-                idempotencyHash,
-                requestId,
-              }),
+            const result = await dependencies.studioRepository.changeRole({
+              context,
+              studioId: studioRoute.studioId!,
+              profileId: studioRoute.memberId!,
+              role: body.role as 'owner' | 'editor' | 'viewer',
+              idempotencyHash,
+              requestId,
+            });
+            await dependencies.realtimeTransport?.revokeStudioMember(
+              studioRoute.studioId!,
+              studioRoute.memberId!,
             );
+            return response(result);
           }
           if (
             request.method === 'POST' &&
             studioRoute.route === '/v6/studios/:id/members/:profileId/remove'
           ) {
             assertExactKeys(await readObjectBody(request), []);
-            return response(
-              await dependencies.studioRepository.removeMember({
-                context,
-                studioId: studioRoute.studioId!,
-                profileId: studioRoute.memberId!,
-                idempotencyHash,
-                requestId,
-              }),
+            const result = await dependencies.studioRepository.removeMember({
+              context,
+              studioId: studioRoute.studioId!,
+              profileId: studioRoute.memberId!,
+              idempotencyHash,
+              requestId,
+            });
+            await dependencies.realtimeTransport?.revokeStudioMember(
+              studioRoute.studioId!,
+              studioRoute.memberId!,
             );
+            return response(result);
           }
           if (
             request.method === 'GET' &&
@@ -1670,6 +2024,7 @@ export function createCommercialWorker(
         ) {
           const deviceId = readDeactivateDevice(await readObjectBody(request));
           await dependencies.repository.deactivateDevice(profile.id, deviceId);
+          await dependencies.realtimeTransport?.revokeProfile(profile.id);
           await dependencies.repository.appendAudit({
             profileId,
             action: 'device.deactivate',
@@ -1909,6 +2264,7 @@ export function createCommercialWorker(
         if (request.method === 'POST' && url.pathname === '/v1/auth/logout') {
           assertExactKeys(await readObjectBody(request), []);
           await dependencies.repository.logout(identity.accessToken);
+          await dependencies.realtimeTransport?.revokeProfile(profile.id);
           await dependencies.repository.appendAudit({
             profileId,
             action: 'session.logout',
@@ -1926,6 +2282,8 @@ export function createCommercialWorker(
 
         throw new ApiError(404, 'route_not_found', 'Route introuvable.');
       } catch (error) {
+        if (normalizeApiRoute(url.pathname).startsWith('/v7/'))
+          realtime = 'rejected';
         if (
           request.method === 'POST' &&
           url.pathname === '/v2/activation-keys/redeem'
@@ -2002,6 +2360,11 @@ export function createCommercialWorker(
             ai,
             cloud,
             studio,
+            realtime,
+            connection_ref: connectionRef,
+            connection_count: connectionCount,
+            backlog_depth: backlogDepth,
+            broadcast_latency_ms: broadcastLatency,
           });
         } catch {
           /* Observability failure must not replay a successful mutation. */

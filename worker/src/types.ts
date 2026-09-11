@@ -19,6 +19,10 @@ import type {
   ScenarioObjectStorage,
 } from './cloudSync.ts';
 import type { StudioNotificationProvider, StudioRepository } from './studio.ts';
+import type {
+  CollaborationChannelNamespace,
+  RealtimeCollaborationTransport,
+} from './realtimeCollaboration.ts';
 
 export interface WorkerEnvironment {
   SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
@@ -55,6 +59,16 @@ export interface WorkerEnvironment {
   STUDIO_INVITATION_PEPPER: string;
   STUDIO_INVITATION_TTL_SECONDS?: string;
   STUDIO_EVENT_PAGE_SIZE?: string;
+  STUDIO_TICKET_PEPPER: string;
+  STUDIO_REALTIME_CHANNEL?: CollaborationChannelNamespace;
+  STUDIO_TICKET_TTL_SECONDS?: string;
+  STUDIO_HEARTBEAT_SECONDS?: string;
+  STUDIO_IDLE_TIMEOUT_SECONDS?: string;
+  STUDIO_MAX_CONNECTION_SECONDS?: string;
+  STUDIO_MAX_CONNECTIONS?: string;
+  STUDIO_MAX_PROFILE_CONNECTIONS?: string;
+  STUDIO_MAX_OPERATION_BYTES?: string;
+  STUDIO_MAX_PENDING_EVENTS?: string;
 }
 
 export interface AuthenticatedIdentity {
@@ -166,4 +180,5 @@ export type WorkerDependencies = {
     invitationTtlSeconds: number;
     eventPageSize: number;
   };
+  realtimeTransport?: RealtimeCollaborationTransport;
 };

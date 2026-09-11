@@ -1,0 +1,17 @@
+begin;
+select plan(13);
+select has_table('public','studio_collaboration_operations');
+select has_table('public','studio_collaboration_conflicts');
+select has_table('public','studio_collaboration_conflict_resolutions');
+select has_table('public','studio_collaboration_snapshots');
+select has_table('public','studio_collaboration_acknowledgements');
+select has_table('public','studio_collaboration_tickets');
+select has_table('public','studio_collaboration_compactions');
+select has_function('public','consume_studio_collaboration_ticket');
+select has_function('public','append_studio_collaboration_operation');
+select has_function('public','ack_studio_collaboration_cursor');
+select has_function('public','commit_studio_collaboration_snapshot');
+select ok((select relrowsecurity from pg_class where oid='public.studio_collaboration_operations'::regclass),'operations RLS enabled');
+select ok((select relrowsecurity from pg_class where oid='public.studio_collaboration_tickets'::regclass),'tickets RLS enabled');
+select * from finish();
+rollback;

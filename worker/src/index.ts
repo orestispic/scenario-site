@@ -15,6 +15,7 @@ import {
   SupabaseScenarioObjectStorage,
 } from './cloudSync.ts';
 import { SupabaseStudioRepository } from './studio.ts';
+import { CloudflareRealtimeTransport } from './realtimeCollaboration.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -74,6 +75,13 @@ const productionWorker = {
       const stripeSecretKey = required(environment, 'STRIPE_SECRET_KEY');
       if (!stripeSecretKey.startsWith('sk_test_'))
         throw new Error('Phase 3 accepts Stripe test keys only.');
+      let realtimeTransport;
+      if (environment.STUDIO_REALTIME_CHANNEL) {
+        required(environment, 'STUDIO_TICKET_PEPPER');
+        realtimeTransport = new CloudflareRealtimeTransport(
+          environment.STUDIO_REALTIME_CHANNEL,
+        );
+      }
       runtime = createCommercialWorker({
         environment: environment.SCENARIO_ENVIRONMENT,
         allowedOrigins: required(environment, 'API_ALLOWED_ORIGINS')
@@ -191,6 +199,7 @@ const productionWorker = {
             500,
           ),
         },
+        realtimeTransport,
       });
       runtimes.set(environment, runtime);
     }

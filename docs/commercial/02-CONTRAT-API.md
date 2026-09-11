@@ -24,6 +24,8 @@ La phase 3 ajoute `lib/commercial/contracts-v3.ts`, version `2026-09-v3`, sans m
 
 ## Concurrence, cache et compatibilité
 
+La phase 4 ajoute `contracts-v4.ts` (`2026-09-v4`) et `GET /v3/entitlements`. La réponse étend `EntitlementsResponse` avec `contractVersion`; le payload signé ajoute `contractVersion` et `snapshotJson`, qui lie tous les droits et dates au compte. Les contrats v1/v2/v3 restent inchangés. Voir `08-PHASE-4-PREPRODUCTION.md` pour les contraintes de compatibilité et la dépréciation du cache v2 comme preuve de droits.
+
 Les lectures de configuration utilisent `ETag` et `Cache-Control`; le client envoie `If-None-Match`. `GET /me/entitlements` retourne `configuration_version`, `entitlement_snapshot_id`, `offline_valid_until`, `minimum_supported_version` et `server_time`. Les écritures de synchronisation exigent un `Idempotency-Key` et une version de scénario parente pour détecter un conflit.
 
 ## Principes de réponse

@@ -34,7 +34,10 @@ export class StripeRestGateway implements StripeGateway {
   constructor(
     private readonly secretKey: string,
     private readonly fetcher: typeof fetch = fetch,
-  ) {}
+  ) {
+    if (!/^sk_test_[A-Za-z0-9_]+$/.test(secretKey))
+      throw new Error('Stripe test key required');
+  }
 
   async createCheckoutSession(
     input: StripeCheckoutInput,

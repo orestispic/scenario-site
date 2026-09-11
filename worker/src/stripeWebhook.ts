@@ -55,7 +55,15 @@ export class StripeWebhookVerifier {
     private readonly secret: string,
     private readonly toleranceSeconds = STRIPE_WEBHOOK_TOLERANCE_SECONDS,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    if (
+      !secret ||
+      !Number.isSafeInteger(toleranceSeconds) ||
+      toleranceSeconds < 1 ||
+      toleranceSeconds > 300
+    )
+      throw new Error('Invalid Stripe webhook configuration');
+  }
 
   async verify(
     rawBody: string,

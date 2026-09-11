@@ -1,0 +1,32 @@
+name = "scenario-commercial-api-preproduction"
+main = "worker/src/index.ts"
+compatibility_date = "2026-05-22"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[vars]
+SCENARIO_ENVIRONMENT = "staging"
+API_ALLOWED_ORIGINS = "https://preproduction.example.invalid,tauri://localhost,http://tauri.localhost"
+RATE_LIMIT_MAX_REQUESTS = "60"
+RATE_LIMIT_WINDOW_SECONDS = "60"
+STRIPE_WEBHOOK_TOLERANCE_SECONDS = "300"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimitBucket"
+
+[[migrations]]
+tag = "phase4-rate-limit-v1"
+new_sqlite_classes = ["RateLimitBucket"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+# Supply separate Supabase TEST, Stripe TEST and signing secrets through the
+# secret manager. No routes, account_id or production resource is configured.

@@ -146,7 +146,12 @@ function subscriptionPriceReference(
 }
 
 export class LocalBillingRepository implements BillingRepository {
-  private readonly processedEvents = new Set<string>();
+  private mutationQueue: Promise<unknown> = Promise.resolve();
+  private keySnapshots = new Map<
+    string,
+    Array<{ profileId: string; snapshotId: string }>
+  >();
+  private readonly processedEvents = new Map<string, string>();
   private readonly billing = new Map<string, BillingState>();
   private readonly customerProfiles = new Map<string, string>();
   private readonly checkoutProfiles = new Map<
@@ -207,7 +212,15 @@ export class LocalBillingRepository implements BillingRepository {
     event: VerifiedStripeEvent,
     _rawBody: string,
   ): Promise<{ replayed: boolean }> {
-    if (this.processedEvents.has(event.id)) return { replayed: true };
+    if (this.processedEvents.has(event.id)) {
+      if (this.processedEvents.get(event.id) !== _rawBody)
+        throw new CommercialRepositoryError(
+          409,
+          'event_payload_mismatch',
+          'Événement incohérent.',
+        );
+      return { replayed: true };
+    }
     const object = event.data.object;
     if (event.type === 'checkout.session.completed') {
       const checkout = this.checkoutProfiles.get(
@@ -221,7 +234,7 @@ export class LocalBillingRepository implements BillingRepository {
           'Session Checkout inconnue.',
         );
       this.customerProfiles.set(customer, checkout.profileId);
-      this.processedEvents.add(event.id);
+      this.processedEvents.set(event.id, _rawBody);
       return { replayed: false };
     }
     const customer = stringField(object, 'customer');
@@ -240,7 +253,7 @@ export class LocalBillingRepository implements BillingRepository {
     if (customer) this.customerProfiles.set(customer, profileId);
     const previousCreated = this.lastEventCreated.get(profileId) ?? -1;
     if (event.created < previousCreated) {
-      this.processedEvents.add(event.id);
+      this.processedEvents.set(event.id, _rawBody);
       return { replayed: false };
     }
     this.lastEventCreated.set(profileId, event.created);
@@ -283,7 +296,7 @@ export class LocalBillingRepository implements BillingRepository {
           next.currentPeriodStartsAt,
           next.currentPeriodEndsAt,
         );
-      this.processedEvents.add(event.id);
+      this.processedEvents.set(event.id, _rawBody);
       return { replayed: false };
     }
     const paid = event.type === 'invoice.paid';
@@ -318,7 +331,7 @@ export class LocalBillingRepository implements BillingRepository {
     });
     if (paid && selection)
       this.issueGrant(profileId, selection, periodStart, periodEnd);
-    this.processedEvents.add(event.id);
+    this.processedEvents.set(event.id, _rawBody);
     return { replayed: false };
   }
 
@@ -336,7 +349,17 @@ export class LocalBillingRepository implements BillingRepository {
     );
   }
 
-  async redeemActivationKey(input: {
+  redeemActivationKey(input: {
+    profileId: string;
+    keyHash: string;
+    device: ActivateDeviceInput;
+  }) {
+    const result = this.mutationQueue.then(() => this.redeemSerial(input));
+    this.mutationQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async redeemSerial(input: {
     profileId: string;
     keyHash: string;
     device: ActivateDeviceInput;
@@ -382,16 +405,21 @@ export class LocalBillingRepository implements BillingRepository {
         'activation_already_used',
         'Clé déjà activée pour ce compte.',
       );
+    const device = await this.commercial.activateDevice(
+      input.profileId,
+      input.device,
+      record.selection.deviceLimit,
+    );
     const snapshot = this.issueGrant(
       input.profileId,
       record.selection,
       new Date(this.now()).toISOString(),
       record.expiresAt,
     );
-    const device = await this.commercial.activateDevice(
-      input.profileId,
-      input.device,
-    );
+    this.keySnapshots.set(record.id, [
+      ...(this.keySnapshots.get(record.id) ?? []),
+      { profileId: input.profileId, snapshotId: snapshot.id },
+    ]);
     const activation: ActivationRedemptionView = {
       id: record.id,
       keySuffix: record.suffix,
@@ -422,6 +450,7 @@ export class LocalBillingRepository implements BillingRepository {
     keyId: string;
     actorProfileId: string;
   }): Promise<void> {
+    await this.mutationQueue;
     const record = this.keys.get(input.keyId);
     if (!record)
       throw new CommercialRepositoryError(
@@ -430,6 +459,11 @@ export class LocalBillingRepository implements BillingRepository {
         'Clé introuvable.',
       );
     record.revokedAt = new Date(this.now()).toISOString();
+    for (const grant of this.keySnapshots.get(record.id) ?? []) {
+      this.commercial.revokeGrant(grant.profileId, grant.snapshotId);
+      if (this.billing.get(grant.profileId)?.source === 'activation_key')
+        this.billing.set(grant.profileId, emptyBilling());
+    }
     for (const values of this.activations.values())
       for (const activation of values)
         if (activation.id === input.keyId) activation.status = 'revoked';

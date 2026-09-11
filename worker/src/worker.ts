@@ -7,6 +7,8 @@ import {
 } from './types.ts';
 import { fingerprintActivationKey } from './activationKeys.ts';
 import { StripeWebhookError } from './stripeWebhook.ts';
+import { API_ROUTES, structuredTelemetry } from './observability.ts';
+import type { BoundOfflineGrantPayload } from '../../lib/commercial/contracts-v4.ts';
 
 class ApiError extends Error {
   constructor(
@@ -70,8 +72,9 @@ async function readObjectBody(
     throw new ApiError(413, 'payload_too_large', 'Requête trop volumineuse.');
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
+    body = JSON.parse(await readBoundedBody(request, 8192));
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(400, 'invalid_json', 'Corps JSON invalide.');
   }
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -181,7 +184,7 @@ async function readRawBody(request: Request): Promise<string> {
   const contentLength = Number(request.headers.get('content-length') ?? 0);
   if (contentLength > 1_048_576)
     throw new ApiError(413, 'payload_too_large', 'Événement trop volumineux.');
-  const body = await request.text();
+  const body = await readBoundedBody(request, 1_048_576);
   if (!body || body.length > 1_048_576)
     throw new ApiError(
       400,
@@ -189,6 +192,41 @@ async function readRawBody(request: Request): Promise<string> {
       'Événement vide ou trop volumineux.',
     );
   return body;
+}
+
+async function readBoundedBody(
+  request: Request,
+  maximum: number,
+): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximum) {
+        await reader.cancel();
+        throw new ApiError(
+          413,
+          'payload_too_large',
+          'Requête trop volumineuse.',
+        );
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 async function hashFingerprint(
@@ -222,10 +260,13 @@ export function createCommercialWorker(
       const url = new URL(request.url);
       let profileId: string | null = null;
       let status = 500;
+      const startedAt = performance.now();
+      let webhook: 'none' | 'processed' | 'replayed' | 'failed' = 'none';
 
       try {
         validateOrigin(origin, dependencies.allowedOrigins);
         if (request.method === 'OPTIONS') {
+          status = 204;
           const response = emptyResponse(
             204,
             requestId,
@@ -243,6 +284,31 @@ export function createCommercialWorker(
           response.headers.set('Access-Control-Max-Age', '600');
           return response;
         }
+
+        if (!API_ROUTES.has(url.pathname))
+          throw new ApiError(404, 'route_not_found', 'Route introuvable.');
+        if (request.method !== 'GET' && request.method !== 'POST')
+          throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+        const source = request.headers.get('cf-connecting-ip') ?? 'unknown';
+        const sourceHash = await hashFingerprint(
+          source,
+          dependencies.deviceFingerprintPepper,
+        );
+        if (
+          !(await dependencies.rateLimiter.allow(
+            `ingress:${sourceHash}:${url.pathname}`,
+            Date.now(),
+          ))
+        )
+          throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
+        if (
+          request.method === 'POST' &&
+          url.pathname !== '/v2/stripe/webhook' &&
+          !/^application\/json(?:\s*;|$)/i.test(
+            request.headers.get('content-type') ?? '',
+          )
+        )
+          throw new ApiError(415, 'json_required', 'Corps JSON requis.');
 
         if (request.method === 'GET' && url.pathname === '/v1/config') {
           const [configuration, publicKey] = await Promise.all([
@@ -270,6 +336,7 @@ export function createCommercialWorker(
           url.pathname === '/v2/stripe/webhook'
         ) {
           const rawBody = await readRawBody(request);
+          webhook = 'failed';
           const event = await dependencies.stripeWebhookVerifier.verify(
             rawBody,
             request.headers.get('stripe-signature'),
@@ -279,6 +346,7 @@ export function createCommercialWorker(
             rawBody,
           );
           status = 200;
+          webhook = result.replayed ? 'replayed' : 'processed';
           return jsonResponse(
             {
               received: true,
@@ -349,7 +417,10 @@ export function createCommercialWorker(
           );
         }
 
-        if (request.method === 'GET' && url.pathname === '/v1/entitlements') {
+        if (
+          request.method === 'GET' &&
+          ['/v1/entitlements', '/v3/entitlements'].includes(url.pathname)
+        ) {
           const entitlements = await dependencies.repository.getEntitlements(
             profile.id,
           );
@@ -367,11 +438,21 @@ export function createCommercialWorker(
             issuedAt: entitlements.snapshot.issuedAt,
             expiresAt: entitlements.snapshot.offlineValidUntil,
           };
+          const boundPayload: BoundOfflineGrantPayload = {
+            ...payload,
+            contractVersion: '2026-09-v4',
+            snapshotJson: JSON.stringify(entitlements.snapshot),
+          };
           status = 200;
           return jsonResponse(
             {
               snapshot: entitlements.snapshot,
-              offlineGrant: await dependencies.offlineGrantSigner.sign(payload),
+              offlineGrant: await dependencies.offlineGrantSigner.sign(
+                url.pathname === '/v3/entitlements' ? boundPayload : payload,
+              ),
+              ...(url.pathname === '/v3/entitlements'
+                ? { contractVersion: '2026-09-v4' }
+                : {}),
               request_id: requestId,
             },
             status,
@@ -704,9 +785,8 @@ export function createCommercialWorker(
           } catch {
             console.warn(
               JSON.stringify({
-                requestId,
-                path: url.pathname,
-                audit: 'failed',
+                event: 'audit.unavailable',
+                request_id: requestId,
               }),
             );
           }
@@ -734,15 +814,20 @@ export function createCommercialWorker(
           dependencies.allowedOrigins,
         );
       } finally {
-        console.info(
-          JSON.stringify({
-            requestId,
+        try {
+          (dependencies.telemetry ?? structuredTelemetry).record({
+            request_id: requestId,
             method: request.method,
-            path: url.pathname,
+            route: API_ROUTES.has(url.pathname) ? url.pathname : 'unknown',
             status,
-            profileId,
-          }),
-        );
+            duration_ms: Math.max(0, Math.round(performance.now() - startedAt)),
+            outcome:
+              status >= 500 ? 'unavailable' : status >= 400 ? 'rejected' : 'ok',
+            webhook,
+          });
+        } catch {
+          /* Observability failure must not replay a successful mutation. */
+        }
       }
     },
   };

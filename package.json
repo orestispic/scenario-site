@@ -9,6 +9,7 @@
     "dev": "vinext dev",
     "build": "vite build --config vite.vercel.config.ts",
     "test:api": "node --experimental-transform-types --test worker/tests/*.test.ts tests/*.test.ts",
+    "test:security": "node scripts/security-check.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "start:api": "wrangler dev --config wrangler.api.toml",

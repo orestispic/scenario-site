@@ -1,6 +1,7 @@
 import { SupabaseJwksTokenVerifier } from './jwt.ts';
 import { EcdsaOfflineGrantSigner } from './offlineGrant.ts';
-import { InMemoryRateLimiter } from './rateLimit.ts';
+import { DistributedRateLimiter } from './distributedRateLimit.ts';
+export { RateLimitBucket } from './distributedRateLimit.ts';
 import { SupabaseRestRepository } from './supabaseRepository.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { createCommercialWorker } from './worker.ts';
@@ -18,15 +19,25 @@ function required(
   return value;
 }
 
-let runtime: ReturnType<typeof createCommercialWorker> | null = null;
+const runtimes = new WeakMap<
+  WorkerEnvironment,
+  ReturnType<typeof createCommercialWorker>
+>();
 
 const productionWorker = {
   fetch(request: Request, environment: WorkerEnvironment): Promise<Response> {
-    if (environment.SCENARIO_ENVIRONMENT === 'test') {
+    if (!['staging', 'production'].includes(environment.SCENARIO_ENVIRONMENT)) {
       throw new Error(
         'The production Worker entry point cannot run the local-test environment.',
       );
     }
+    if (
+      !/^sk_test_[A-Za-z0-9_]+$/.test(
+        required(environment, 'STRIPE_SECRET_KEY'),
+      )
+    )
+      throw new Error('Stripe test key required');
+    let runtime = runtimes.get(environment);
     if (!runtime) {
       const maximumRequests = Number(
         environment.RATE_LIMIT_MAX_REQUESTS ?? 120,
@@ -56,7 +67,9 @@ const productionWorker = {
           environment.SUPABASE_JWT_AUDIENCE,
         ),
         offlineGrantSigner: signer,
-        rateLimiter: new InMemoryRateLimiter(
+        rateLimiter: new DistributedRateLimiter(
+          environment.RATE_LIMITER,
+          required(environment, 'RATE_LIMIT_KEY_PEPPER'),
           maximumRequests,
           windowSeconds * 1_000,
         ),
@@ -72,6 +85,7 @@ const productionWorker = {
           Number(environment.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300),
         ),
       });
+      runtimes.set(environment, runtime);
     }
     return runtime.fetch(request);
   },

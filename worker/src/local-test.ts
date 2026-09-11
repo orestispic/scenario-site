@@ -1,47 +1,9 @@
-import {
-  LocalTestRepository,
-  LocalTestTokenVerifier,
-} from './localTestRepository.ts';
-import { createEphemeralOfflineGrantSigner } from './offlineGrant.ts';
-import { InMemoryRateLimiter } from './rateLimit.ts';
-import { createCommercialWorker } from './worker.ts';
-import { LocalBillingRepository } from './localBillingRepository.ts';
-import { LocalStripeGateway } from './localStripeGateway.ts';
-import { StripeWebhookVerifier } from './stripeWebhook.ts';
-
-const LOCAL_WEBHOOK_SECRET = 'whsec_local_fixture_only';
-type LocalRuntime = {
-  worker: ReturnType<typeof createCommercialWorker>;
-  billing: LocalBillingRepository;
-};
+import { createLocalRuntime } from './localRuntime.ts';
+type LocalRuntime = Awaited<ReturnType<typeof createLocalRuntime>>;
 let localWorker: Promise<LocalRuntime> | null = null;
 
 async function getLocalWorker() {
-  localWorker ??= createEphemeralOfflineGrantSigner().then(
-    (offlineGrantSigner) => {
-      const repository = new LocalTestRepository();
-      const billing = new LocalBillingRepository(repository);
-      const worker = createCommercialWorker({
-        environment: 'test',
-        allowedOrigins: [
-          'http://localhost:1420',
-          'http://localhost:3000',
-          'http://127.0.0.1:1420',
-          'http://127.0.0.1:3000',
-        ],
-        repository,
-        tokenVerifier: new LocalTestTokenVerifier(),
-        offlineGrantSigner,
-        rateLimiter: new InMemoryRateLimiter(300, 60_000),
-        deviceFingerprintPepper: 'ephemeral-local-test-pepper',
-        activationKeyPepper: 'local-test-activation-pepper',
-        billingRepository: billing,
-        stripeGateway: new LocalStripeGateway(),
-        stripeWebhookVerifier: new StripeWebhookVerifier(LOCAL_WEBHOOK_SECRET),
-      });
-      return { worker, billing };
-    },
-  );
+  localWorker ??= createLocalRuntime();
   return localWorker;
 }
 
@@ -49,6 +11,10 @@ const localTestWorker = {
   async fetch(request: Request): Promise<Response> {
     const runtime = await getLocalWorker();
     const url = new URL(request.url);
+    if (!['localhost', '127.0.0.1'].includes(url.hostname))
+      return new Response(null, { status: 403 });
+    if (url.pathname.startsWith('/_local/auth/v1/'))
+      return runtime.auth.fetch(request);
     if (
       url.pathname === '/_local/admin/activation-keys' &&
       request.method === 'POST'

@@ -147,14 +147,19 @@ export class LocalTestRepository implements CommercialRepository {
   async activateDevice(
     profileId: string,
     input: ActivateDeviceInput,
+    overrideLimit?: number,
   ): Promise<DeviceView> {
     const state = this.requireState(profileId);
+    const limit =
+      overrideLimit ??
+      (await this.getEntitlements(profileId))?.deviceLimit ??
+      state.deviceLimit;
     const existingId = state.deviceIdsByFingerprint.get(input.fingerprintHash);
     const existing = state.devices.find((device) => device.id === existingId);
     const activeCount = state.devices.filter(
       (device) => device.status === 'active',
     ).length;
-    if (!existing && activeCount >= state.deviceLimit) {
+    if ((!existing || existing.status === 'revoked') && activeCount >= limit) {
       throw new CommercialRepositoryError(
         409,
         'device_limit_reached',
@@ -202,7 +207,31 @@ export class LocalTestRepository implements CommercialRepository {
     return [];
   }
 
-  async logout(): Promise<void> {}
+  async logout(_accessToken?: string): Promise<void> {}
+
+  registerLocalUser(
+    authUserId: string,
+    email: string,
+    displayName: string,
+  ): void {
+    const state = localState('discovery', 1, [
+      { code: 'local.edit', enabled: true, value: null },
+    ]);
+    const id = crypto.randomUUID();
+    state.profile = {
+      id,
+      authUserId,
+      account: { id, email, displayName },
+      role: 'customer',
+    };
+    this.profiles.set(authUserId, state);
+  }
+
+  revokeGrant(profileId: string, snapshotId: string): void {
+    const state = this.requireState(profileId);
+    if (state.purchasedGrant?.snapshotId === snapshotId)
+      state.purchasedGrant = null;
+  }
 
   async appendAudit(event: {
     profileId: string | null;

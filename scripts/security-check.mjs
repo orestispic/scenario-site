@@ -1,0 +1,54 @@
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import assert from 'node:assert/strict';
+
+const appMode = process.argv.includes('--app');
+const roots = appMode
+  ? [
+      '../scenario-app-commercial/src',
+      '../scenario-app-commercial/src-tauri/src',
+    ]
+  : ['worker/src', 'lib', 'app', 'supabase', 'scripts'];
+let files = 0;
+async function scan(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await scan(path);
+      continue;
+    }
+    if (!/\.(ts|tsx|js|mjs|sql|json|rs)$/.test(path)) continue;
+    const text = await readFile(path, 'utf8');
+    files += 1;
+    // Deliberately report only filenames, never the matched secret.
+    assert.ok(
+      !/-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/.test(text),
+      `Private key: ${path}`,
+    );
+    assert.ok(
+      !/(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{24,}/.test(
+        text,
+      ),
+      `Provider secret: ${path}`,
+    );
+    if (
+      /^(app|lib)[\\/]/.test(path) ||
+      (appMode && path.includes('commercial'))
+    ) {
+      assert.ok(
+        !/(?:localStorage|sessionStorage)\.setItem\([^\n]*(?:token|session)/i.test(
+          text,
+        ),
+        `Token persistence: ${path}`,
+      );
+      assert.ok(
+        !/SUPABASE_SERVICE_ROLE_KEY|STRIPE_SECRET_KEY|OFFLINE_GRANT_PRIVATE_JWK/.test(
+          text,
+        ),
+        `Server config in client: ${path}`,
+      );
+    }
+  }
+}
+for (const root of roots) await scan(root);
+console.log(`Security source checks passed (${files} files).`);

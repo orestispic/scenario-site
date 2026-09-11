@@ -10,6 +10,8 @@ import type { EntitlementSnapshot } from '../../lib/commercial/contracts.ts';
 import type { BillingRepository } from './billing.ts';
 import type { StripeGateway } from './stripe.ts';
 import type { StripeWebhookVerifier } from './stripeWebhook.ts';
+import type { LimiterNamespace } from './distributedRateLimit.ts';
+import type { Telemetry } from './observability.ts';
 
 export interface WorkerEnvironment {
   SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
@@ -24,6 +26,8 @@ export interface WorkerEnvironment {
   OFFLINE_GRANT_KEY_ID: string;
   RATE_LIMIT_MAX_REQUESTS?: string;
   RATE_LIMIT_WINDOW_SECONDS?: string;
+  RATE_LIMITER: LimiterNamespace;
+  RATE_LIMIT_KEY_PEPPER: string;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
   STRIPE_WEBHOOK_TOLERANCE_SECONDS?: string;
@@ -103,6 +107,7 @@ export class CommercialRepositoryError extends Error {
 }
 
 export type WorkerDependencies = {
+  telemetry?: Telemetry;
   environment: 'test' | 'staging' | 'production';
   allowedOrigins: string[];
   repository: CommercialRepository;

@@ -1,5 +1,11 @@
 # Phase 8 — édition Studio temps réel
 
+## Rejouabilité de la chaîne Supabase
+
+La validation sur un Supabase local jetable a révélé que la phase 2 avait renommé `public.users` en `public.profiles`, tandis que les migrations immuables des phases 6 et 7 continuaient à déclarer des clés étrangères vers `public.users`. La migration corrective append-only `20260914500000_profile_identity_reference_bridge.sql` ajoute un registre privé minimal de clés d'identité, synchronisé à la création d'un profil, afin de rendre la chaîne historique rejouable sans modifier les migrations des phases 0 à 7. `public.profiles` reste la source d'identité canonique, le registre est protégé par RLS et n'accorde aucun accès à `anon` ou `authenticated`. Les nouvelles tables v8 référencent directement `public.profiles`.
+
+Le lint PostgreSQL réel a ensuite détecté deux appels historiques à `digest` incompatibles avec le `search_path` restreint des RPC de restauration et suppression cloud, ainsi que cinq RPC cloud encore exécutables via le privilège implicite `PUBLIC`. La migration post-v8 `20260917100000_cloud_sync_runtime_hardening.sql` qualifie explicitement `extensions.digest`, retire les privilèges directs `anon`/`authenticated` et réserve ces RPC au `service_role`. Les signatures publiques restent inchangées.
+
 ## Périmètre livré
 
 Le contrat public `2026-09-v8` complète v1–v7 sans les modifier. Les routes `POST /v7/studios/:id/realtime/*` sont authentifiées et utilisent les mêmes en-têtes de version, plateforme et appareil que v6/v7. Le Worker valide à nouveau le profil, la version minimale, les droits, l’appareil, le scénario non supprimé et le membership courant à chaque ticket, connexion, heartbeat, poll, opération et compaction. Un viewer peut se connecter en lecture seule mais toute mutation est dissimulée comme une ressource non accessible.
@@ -45,18 +51,23 @@ Une investigation utilise uniquement période, route, statut, request_id, Studio
 
 ## État des validations
 
-Fonctionnel localement : protocole HTTP, trois comptes, présence, heartbeat/timeout, reprise, déduplication, concurrence, conflits/tombstones, viewer, révocations, capacité/backpressure, compaction idempotente, interface Tiptap progressive et copie de récupération.
+Fonctionnel localement : protocole HTTP, trois comptes, présence, heartbeat/timeout, reprise, déduplication, concurrence, conflits/tombstones, viewer, révocations, capacité/backpressure, compaction idempotente, interface Tiptap progressive et copie de récupération. La chaîne complète des migrations a aussi été rejouée sur Supabase local après une remise à zéro ; les cinq fichiers pgTAP passent. Ils couvrent notamment RLS, privilèges RPC, registre d'identité privé et consommation unique d'un ticket. Le lint PostgreSQL ne conserve que les avertissements d'arguments volontairement inutilisés afin de préserver les contrats RPC v7.
 
-Simulé : identité, droits, stockage Studio, transport temps réel, snapshots et diffusion utilisent des adaptateurs mémoire déterministes. Les migrations et RLS sont contrôlées statiquement mais n’ont pas été exécutées sur PostgreSQL.
+Simulé : droits métier, stockage Studio, transport temps réel, snapshots et diffusion applicative utilisent toujours des adaptateurs mémoire déterministes. Supabase Auth, PostgreSQL, les migrations, RLS et RPC de sécurité ont en revanche été exécutés réellement dans la pile locale Docker.
 
-Bloqué faute d’environnement déjà fourni : Supabase local/Docker, validation transactionnelle RLS/RPC, stockage objet test, Durable Object Cloudflare, mesure réelle de diffusion et invalidation push. Aucun compte ni ressource n’a été créé.
+Encore bloqué faute d’infrastructure isolée fournie : stockage objet test, Durable Object Cloudflare, mesure réelle de diffusion et invalidation push. Aucun compte ni ressource externe n’a été créé.
 
-Validation externe exacte, seulement sur une pile jetable déjà autorisée :
+Commandes validées sur la pile locale jetable :
 
 ```powershell
-supabase start
-supabase db reset --local
-supabase test db supabase/tests/phase8_realtime_collaboration.sql
+npx.cmd supabase start
+npx.cmd supabase db reset --local
+npx.cmd supabase test db
+```
+
+Validation Cloudflare encore attendue, seulement après création d'une infrastructure de test isolée :
+
+```powershell
 npx wrangler dev --config wrangler.preproduction.toml --local
 npx wrangler deploy --config wrangler.preproduction.toml --dry-run --outdir .wrangler/phase8-preproduction
 ```

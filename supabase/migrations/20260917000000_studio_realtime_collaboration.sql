@@ -5,7 +5,7 @@ create table public.studio_collaboration_operations (
   studio_id uuid not null references public.studios(id),
   scenario_id uuid not null references public.cloud_scenarios(id),
   base_version_id uuid not null references public.cloud_scenario_versions(id),
-  actor_profile_id uuid not null references public.users(id),
+  actor_profile_id uuid not null references public.profiles(id),
   client_sequence bigint not null check (client_sequence > 0),
   logical_clock bigint not null check (logical_clock > 0),
   operation_type text not null check (operation_type in ('block.upsert','block.delete')),
@@ -38,7 +38,7 @@ create table public.studio_collaboration_conflict_resolutions (
   id uuid primary key default gen_random_uuid(),
   conflict_id uuid not null references public.studio_collaboration_conflicts(id),
   studio_id uuid not null references public.studios(id),
-  resolved_by uuid not null references public.users(id),
+  resolved_by uuid not null references public.profiles(id),
   resolution text not null check (resolution in ('accept_remote','keep_local','create_copy')),
   recovery_scenario_id uuid references public.cloud_scenarios(id),
   request_id uuid not null,
@@ -57,7 +57,7 @@ create table public.studio_collaboration_snapshots (
   through_cursor bigint not null check (through_cursor >= 0),
   storage_key text not null check (length(storage_key) between 1 and 512 and storage_key !~ '(^|/)\.\.(/|$)' and storage_key !~ '^/'),
   checksum text not null check (checksum ~ '^[0-9a-f]{64}$'),
-  created_by uuid not null references public.users(id),
+  created_by uuid not null references public.profiles(id),
   entitlement_snapshot_id uuid not null references public.entitlement_snapshots(id),
   request_id uuid not null,
   created_at timestamptz not null default now(),
@@ -67,7 +67,7 @@ create index studio_collaboration_snapshots_history_idx on public.studio_collabo
 
 create table public.studio_collaboration_acknowledgements (
   studio_id uuid not null references public.studios(id),
-  profile_id uuid not null references public.users(id),
+  profile_id uuid not null references public.profiles(id),
   device_fingerprint_hash text not null check (device_fingerprint_hash ~ '^[0-9a-f]{64}$'),
   cursor bigint not null check (cursor >= 0),
   updated_at timestamptz not null default now(),
@@ -77,7 +77,7 @@ create table public.studio_collaboration_acknowledgements (
 create table public.studio_collaboration_tickets (
   ticket_hash text primary key check (ticket_hash ~ '^[0-9a-f]{64}$'),
   studio_id uuid not null references public.studios(id),
-  profile_id uuid not null references public.users(id),
+  profile_id uuid not null references public.profiles(id),
   device_fingerprint_hash text not null check (device_fingerprint_hash ~ '^[0-9a-f]{64}$'),
   origin_hash text not null check (origin_hash ~ '^[0-9a-f]{64}$'),
   expires_at timestamptz not null,
@@ -96,7 +96,7 @@ create table public.studio_collaboration_compactions (
   through_cursor bigint not null check (through_cursor >= from_cursor),
   idempotency_hash text not null check (idempotency_hash ~ '^[0-9a-f]{64}$'),
   request_id uuid not null,
-  created_by uuid not null references public.users(id),
+  created_by uuid not null references public.profiles(id),
   created_at timestamptz not null default now(),
   unique(studio_id,idempotency_hash)
 );
@@ -141,9 +141,9 @@ create or replace function public.append_studio_collaboration_operation(
   p_client_sequence bigint,p_logical_clock bigint,p_operation_type text,p_block_id text,
   p_mutation jsonb,p_checksum text,p_request_id uuid
 ) returns jsonb language plpgsql security definer set search_path=public as $$
-declare v_auth jsonb; v_existing public.studio_collaboration_operations; v_current public.studio_collaboration_operations; v_inserted public.studio_collaboration_operations; v_conflict uuid;
+declare v_existing public.studio_collaboration_operations; v_current public.studio_collaboration_operations; v_inserted public.studio_collaboration_operations; v_conflict uuid;
 begin
-  v_auth:=public.authorize_studio_operation(p_profile_id,p_fingerprint_hash,p_platform,p_client_version,p_studio_id,array['owner','editor']);
+  perform public.authorize_studio_operation(p_profile_id,p_fingerprint_hash,p_platform,p_client_version,p_studio_id,array['owner','editor']);
   if (select scenario_id from public.studios where id=p_studio_id)<>p_scenario_id then raise exception 'collaboration_scope_invalid'; end if;
   if not exists(select 1 from public.cloud_scenario_versions where id=p_base_version_id and scenario_id=p_scenario_id) then raise exception 'base_version_unavailable'; end if;
   if p_operation_type not in ('block.upsert','block.delete') or p_checksum !~ '^[0-9a-f]{64}$' or pg_column_size(p_mutation)>65536 then raise exception 'collaboration_operation_invalid'; end if;

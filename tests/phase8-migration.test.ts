@@ -36,6 +36,54 @@ it('fige SHA-256 de toutes les migrations des phases 0 à 7', async () => {
 });
 
 describe('migration collaborative v8', () => {
+  it('rejoue les références historiques sans modifier les migrations v0 à v7', async () => {
+    const sql = (
+      await readFile(
+        new URL(
+          '../supabase/migrations/20260914500000_profile_identity_reference_bridge.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      )
+    ).toLowerCase();
+    assert.match(sql, /create table public\.users/);
+    assert.match(sql, /references public\.profiles\(id\) on delete cascade/);
+    assert.match(sql, /after insert on public\.profiles/);
+    assert.match(sql, /alter table public\.users enable row level security/);
+    assert.match(sql, /revoke all on public\.users from anon, authenticated/);
+    assert.doesNotMatch(sql, /grant .* to (anon|authenticated)/);
+  });
+
+  it('corrige les RPC cloud historiques après v8 sans élargir leurs privilèges', async () => {
+    const sql = (
+      await readFile(
+        new URL(
+          '../supabase/migrations/20260917100000_cloud_sync_runtime_hardening.sql',
+          import.meta.url,
+        ),
+        'utf8',
+      )
+    ).toLowerCase();
+    assert.match(sql, /extensions\.digest\(/);
+    for (const rpc of [
+      'list_cloud_scenarios',
+      'list_cloud_scenario_versions',
+      'restore_cloud_scenario_version',
+      'soft_delete_cloud_scenario',
+      'get_cloud_storage_key',
+    ]) {
+      assert.match(
+        sql,
+        new RegExp(`revoke all on function public\\.${rpc}\\(`),
+      );
+      assert.match(
+        sql,
+        new RegExp(`grant execute on function public\\.${rpc}\\(`),
+      );
+    }
+    assert.doesNotMatch(sql, /grant execute[\s\S]*to (anon|authenticated)/);
+  });
+
   it('reste append-only, RLS, bornée et atomique', async () => {
     const sql = (
       await readFile(
@@ -77,6 +125,7 @@ describe('migration collaborative v8', () => {
       /grant (insert|update|delete)[\s\S]*to authenticated/,
     );
     assert.doesNotMatch(sql, /drop table|truncate table/);
+    assert.doesNotMatch(sql, /references public\.users\(id\)/);
   });
   it('ne persiste pas la présence et garde les conflits/récupérations explicites', async () => {
     const sql = (

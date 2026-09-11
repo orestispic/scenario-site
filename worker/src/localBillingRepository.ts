@@ -23,6 +23,8 @@ type LocalCatalogItem = CheckoutSelection & {
   deviceLimit: number;
   offlineGraceDays: number;
   entitlements: EntitlementSnapshot['entitlements'];
+  quotaLimits: Record<string, number>;
+  quotaPeriods: Record<string, 'month' | 'lifetime'>;
 };
 
 const LOCAL_CATALOG: LocalCatalogItem[] = [
@@ -42,7 +44,11 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
       { code: 'ai.actions', enabled: true, value: null },
+      { code: 'ai_short_action', enabled: true, value: null },
+      { code: 'ai_pdf_import', enabled: true, value: null },
     ],
+    quotaLimits: { ai_short_action: 6, ai_pdf_import: 2 },
+    quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
   },
   {
     selectionId: '30000000-0000-4000-8000-000000000002',
@@ -60,7 +66,11 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
       { code: 'ai.actions', enabled: true, value: null },
+      { code: 'ai_short_action', enabled: true, value: null },
+      { code: 'ai_pdf_import', enabled: true, value: null },
     ],
+    quotaLimits: { ai_short_action: 6, ai_pdf_import: 2 },
+    quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
   },
   {
     selectionId: '30000000-0000-4000-8000-000000000003',
@@ -78,8 +88,12 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
       { code: 'ai.actions', enabled: true, value: null },
+      { code: 'ai_short_action', enabled: true, value: null },
+      { code: 'ai_pdf_import', enabled: true, value: null },
       { code: 'cloud.sync', enabled: true, value: null },
     ],
+    quotaLimits: { ai_short_action: 10, ai_pdf_import: 4 },
+    quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
   },
   {
     selectionId: '30000000-0000-4000-8000-000000000004',
@@ -97,8 +111,12 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
       { code: 'ai.actions', enabled: true, value: null },
+      { code: 'ai_short_action', enabled: true, value: null },
+      { code: 'ai_pdf_import', enabled: true, value: null },
       { code: 'cloud.sync', enabled: true, value: null },
     ],
+    quotaLimits: { ai_short_action: 10, ai_pdf_import: 4 },
+    quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
   },
 ];
 
@@ -176,6 +194,8 @@ export class LocalBillingRepository implements BillingRepository {
         deviceLimit: _limit,
         offlineGraceDays: _grace,
         entitlements: _rights,
+        quotaLimits: _quotas,
+        quotaPeriods: _periods,
         ...offer
       }) => structuredClone(offer),
     );
@@ -545,6 +565,8 @@ export class LocalBillingRepository implements BillingRepository {
       offlineValidUntil,
       deviceLimit: selection.deviceLimit,
       entitlements: selection.entitlements,
+      quotaLimits: selection.quotaLimits,
+      quotaPeriods: selection.quotaPeriods,
     });
   }
 }

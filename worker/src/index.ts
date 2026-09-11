@@ -8,6 +8,8 @@ import { createCommercialWorker } from './worker.ts';
 import { SupabaseBillingRepository } from './billing.ts';
 import { StripeRestGateway } from './stripe.ts';
 import { StripeWebhookVerifier } from './stripeWebhook.ts';
+import { OpenAiResponsesProvider } from './aiProvider.ts';
+import { SupabaseAiQuotaRepository } from './aiQuota.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -17,6 +19,18 @@ function required(
   if (typeof value !== 'string' || !value.trim())
     throw new Error(`Missing server environment: ${key}`);
   return value;
+}
+
+function boundedInteger(
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum)
+    throw new Error('Invalid bounded server configuration');
+  return parsed;
 }
 
 const runtimes = new WeakMap<
@@ -84,6 +98,45 @@ const productionWorker = {
           required(environment, 'STRIPE_WEBHOOK_SECRET'),
           Number(environment.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300),
         ),
+        aiProvider: new OpenAiResponsesProvider({
+          apiKey: required(environment, 'OPENAI_API_KEY'),
+          shortActionModel: required(environment, 'OPENAI_SHORT_ACTION_MODEL'),
+          pdfImportModel: required(environment, 'OPENAI_PDF_IMPORT_MODEL'),
+          timeoutMs: boundedInteger(
+            environment.AI_PROVIDER_TIMEOUT_MS,
+            90_000,
+            1_000,
+            300_000,
+          ),
+        }),
+        aiQuotaRepository: new SupabaseAiQuotaRepository(environment),
+        aiIdempotencyPepper: required(environment, 'AI_IDEMPOTENCY_PEPPER'),
+        aiPolicy: {
+          shortMaxBodyBytes: boundedInteger(
+            environment.AI_SHORT_MAX_BODY_BYTES,
+            131_072,
+            1_024,
+            1_048_576,
+          ),
+          pdfMaxBodyBytes: boundedInteger(
+            environment.AI_PDF_MAX_BODY_BYTES,
+            1_048_576,
+            8_192,
+            4_194_304,
+          ),
+          maxTranslationSegments: boundedInteger(
+            environment.AI_MAX_TRANSLATION_SEGMENTS,
+            2_000,
+            1,
+            10_000,
+          ),
+          maxResponseBytes: boundedInteger(
+            environment.AI_MAX_RESPONSE_BYTES,
+            2_097_152,
+            1_024,
+            4_194_304,
+          ),
+        },
       });
       runtimes.set(environment, runtime);
     }

@@ -10,6 +10,8 @@ import { createEphemeralOfflineGrantSigner } from './offlineGrant.ts';
 import { StripeWebhookVerifier } from './stripeWebhook.ts';
 import { createCommercialWorker } from './worker.ts';
 import type { WorkerDependencies } from './types.ts';
+import { DeterministicLocalAiProvider } from './localAiProvider.ts';
+import { LocalAiQuotaRepository } from './localAiQuotaRepository.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -44,6 +46,15 @@ export async function createLocalRuntime(
     stripeWebhookVerifier: new StripeWebhookVerifier(
       'whsec_local_fixture_only',
     ),
+    aiProvider: new DeterministicLocalAiProvider(),
+    aiQuotaRepository: new LocalAiQuotaRepository(repository, now),
+    aiIdempotencyPepper: 'ephemeral-local-ai-idempotency-pepper',
+    aiPolicy: {
+      shortMaxBodyBytes: 131_072,
+      pdfMaxBodyBytes: 1_048_576,
+      maxTranslationSegments: 2_000,
+      maxResponseBytes: 2_097_152,
+    },
     ...overrides,
   });
   return { repository, auth, billing, worker };

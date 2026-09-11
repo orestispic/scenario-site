@@ -9,6 +9,17 @@ import { fingerprintActivationKey } from './activationKeys.ts';
 import { StripeWebhookError } from './stripeWebhook.ts';
 import { API_ROUTES, structuredTelemetry } from './observability.ts';
 import type { BoundOfflineGrantPayload } from '../../lib/commercial/contracts-v4.ts';
+import type {
+  AiActionRequest,
+  AiOperation,
+  AiPdfImportRequest,
+} from '../../lib/commercial/contracts-v5.ts';
+import {
+  AiProviderError,
+  type AiProviderInput,
+  type AiProviderResult,
+} from './aiProvider.ts';
+import type { AiReservation } from './aiQuota.ts';
 
 class ApiError extends Error {
   constructor(
@@ -66,13 +77,14 @@ function validateOrigin(origin: string | null, allowedOrigins: string[]): void {
 
 async function readObjectBody(
   request: Request,
+  maximum = 8_192,
 ): Promise<Record<string, unknown>> {
   const contentLength = Number(request.headers.get('content-length') ?? 0);
-  if (contentLength > 8_192)
+  if (contentLength > maximum)
     throw new ApiError(413, 'payload_too_large', 'Requête trop volumineuse.');
   let body: unknown;
   try {
-    body = JSON.parse(await readBoundedBody(request, 8192));
+    body = JSON.parse(await readBoundedBody(request, maximum));
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(400, 'invalid_json', 'Corps JSON invalide.');
@@ -250,6 +262,198 @@ async function hashFingerprint(
     .join('');
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function readAiHeaders(request: Request): {
+  idempotencyKey: string;
+  deviceFingerprint: string;
+  platform: 'windows' | 'macos';
+  clientVersion: string;
+} {
+  const idempotencyKey = request.headers.get('idempotency-key') ?? '';
+  const deviceFingerprint =
+    request.headers.get('x-scenario-device-fingerprint') ?? '';
+  const platform = request.headers.get('x-scenario-platform');
+  const clientVersion = request.headers.get('x-scenario-client-version') ?? '';
+  if (!/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey))
+    throw new ApiError(
+      400,
+      'invalid_idempotency_key',
+      'Clé d’idempotence invalide.',
+    );
+  if (deviceFingerprint.length < 16 || deviceFingerprint.length > 512)
+    throw new ApiError(
+      400,
+      'invalid_fingerprint',
+      'Empreinte d’appareil invalide.',
+    );
+  if (platform !== 'windows' && platform !== 'macos')
+    throw new ApiError(400, 'invalid_platform', 'Plateforme invalide.');
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(clientVersion))
+    throw new ApiError(
+      400,
+      'invalid_client_version',
+      'Version client invalide.',
+    );
+  return { idempotencyKey, deviceFingerprint, platform, clientVersion };
+}
+
+function readAiAction(
+  body: Record<string, unknown>,
+  maximumSegments: number,
+): AiActionRequest {
+  if (body.kind === 'rewrite') {
+    assertExactKeys(body, ['kind', 'instruction', 'text']);
+    return {
+      kind: 'rewrite',
+      instruction: readString(body, 'instruction', 10_000),
+      text: readString(body, 'text', 200_000),
+    };
+  }
+  if (body.kind !== 'translate')
+    throw new ApiError(400, 'invalid_ai_action', 'Action IA invalide.');
+  assertExactKeys(body, ['kind', 'targetLanguage', 'segments']);
+  const targetLanguage = readString(body, 'targetLanguage', 60);
+  if (
+    !Array.isArray(body.segments) ||
+    body.segments.length < 1 ||
+    body.segments.length > maximumSegments
+  )
+    throw new ApiError(
+      400,
+      'invalid_segments',
+      'Blocs de traduction invalides.',
+    );
+  const seen = new Set<number>();
+  const segments = body.segments.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new ApiError(
+        400,
+        'invalid_segments',
+        'Bloc de traduction invalide.',
+      );
+    const segment = value as Record<string, unknown>;
+    assertExactKeys(segment, ['index', 'type', 'text']);
+    if (
+      !Number.isSafeInteger(segment.index) ||
+      (segment.index as number) < 0 ||
+      seen.has(segment.index as number)
+    )
+      throw new ApiError(
+        400,
+        'invalid_segments',
+        'Index de traduction invalide.',
+      );
+    seen.add(segment.index as number);
+    return {
+      index: segment.index as number,
+      type: readString(segment, 'type', 40),
+      text: readString(segment, 'text', 200_000),
+    };
+  });
+  return { kind: 'translate', targetLanguage, segments };
+}
+
+function readAiPdf(body: Record<string, unknown>): AiPdfImportRequest {
+  assertExactKeys(body, ['extractedText']);
+  return { extractedText: readString(body, 'extractedText', 2_000_000) };
+}
+
+function quotaView(reservation: AiReservation) {
+  return {
+    used: reservation.used,
+    limit: reservation.limit,
+    periodStartsAt: reservation.periodStartsAt,
+    periodEndsAt: reservation.periodEndsAt,
+  };
+}
+
+function validateProviderResult(
+  input: AiProviderInput,
+  result: AiProviderResult,
+  maximumBytes: number,
+): void {
+  if (
+    new TextEncoder().encode(JSON.stringify(result)).byteLength > maximumBytes
+  )
+    throw new AiProviderError(
+      'definitive',
+      'ai_response_too_large',
+      'Réponse IA trop volumineuse.',
+    );
+  if (input.operation === 'pdf_import') {
+    if (result.kind !== 'scenario_json')
+      throw new AiProviderError(
+        'definitive',
+        'ai_provider_invalid',
+        'Réponse IA invalide.',
+      );
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result.scenarioJson);
+    } catch {
+      throw new AiProviderError(
+        'definitive',
+        'ai_provider_invalid',
+        'Réponse IA invalide.',
+      );
+    }
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      (parsed as { formatVersion?: unknown }).formatVersion !== 1
+    )
+      throw new AiProviderError(
+        'definitive',
+        'ai_provider_invalid',
+        'Document IA invalide.',
+      );
+    return;
+  }
+  if (input.request.kind === 'rewrite') {
+    if (result.kind !== 'text' || !result.text.trim())
+      throw new AiProviderError(
+        'definitive',
+        'ai_provider_invalid',
+        'Réponse IA invalide.',
+      );
+    return;
+  }
+  if (
+    result.kind !== 'translations' ||
+    result.translations.length !== input.request.segments.length
+  )
+    throw new AiProviderError(
+      'definitive',
+      'ai_provider_invalid',
+      'Traduction IA incomplète.',
+    );
+  const expected = new Set(input.request.segments.map(({ index }) => index));
+  if (
+    result.translations.some(
+      (item) => !expected.delete(item.index) || !item.text.trim(),
+    ) ||
+    expected.size
+  )
+    throw new AiProviderError(
+      'definitive',
+      'ai_provider_invalid',
+      'Traduction IA incohérente.',
+    );
+}
+
 export function createCommercialWorker(
   dependencies: WorkerDependencies & { deviceFingerprintPepper: string },
 ) {
@@ -262,6 +466,8 @@ export function createCommercialWorker(
       let status = 500;
       const startedAt = performance.now();
       let webhook: 'none' | 'processed' | 'replayed' | 'failed' = 'none';
+      let ai: 'none' | 'succeeded' | 'replayed' | 'released' | 'uncertain' =
+        'none';
 
       try {
         validateOrigin(origin, dependencies.allowedOrigins);
@@ -279,7 +485,7 @@ export function createCommercialWorker(
           );
           response.headers.set(
             'Access-Control-Allow-Headers',
-            'Authorization, Content-Type',
+            'Authorization, Content-Type, Idempotency-Key, X-Scenario-Client-Version, X-Scenario-Device-Fingerprint, X-Scenario-Platform',
           );
           response.headers.set('Access-Control-Max-Age', '600');
           return response;
@@ -400,6 +606,218 @@ export function createCommercialWorker(
           ))
         ) {
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
+        }
+
+        if (
+          request.method === 'POST' &&
+          ['/v4/ai/actions', '/v4/ai/pdf-imports'].includes(url.pathname)
+        ) {
+          if (
+            !dependencies.aiProvider ||
+            !dependencies.aiQuotaRepository ||
+            !dependencies.aiIdempotencyPepper ||
+            !dependencies.aiPolicy
+          )
+            throw new ApiError(
+              503,
+              'ai_unconfigured',
+              'Service IA indisponible.',
+            );
+          const context = readAiHeaders(request);
+          const operation: AiOperation =
+            url.pathname === '/v4/ai/actions' ? 'short_action' : 'pdf_import';
+          const body = await readObjectBody(
+            request,
+            operation === 'short_action'
+              ? dependencies.aiPolicy.shortMaxBodyBytes
+              : dependencies.aiPolicy.pdfMaxBodyBytes,
+          );
+          const providerInput: AiProviderInput =
+            operation === 'short_action'
+              ? {
+                  operation,
+                  request: readAiAction(
+                    body,
+                    dependencies.aiPolicy.maxTranslationSegments,
+                  ),
+                }
+              : { operation, request: readAiPdf(body) };
+          const idempotencyKeyHash = await hashFingerprint(
+            `${profile.id}:idempotency:${context.idempotencyKey}`,
+            dependencies.aiIdempotencyPepper,
+          );
+          const requestFingerprint = await hashFingerprint(
+            `content:${canonicalJson(providerInput)}`,
+            dependencies.aiIdempotencyPepper,
+          );
+          let reservation = await dependencies.aiQuotaRepository.reserve({
+            profileId: profile.id,
+            operation,
+            entitlementCode:
+              operation === 'short_action'
+                ? 'ai_short_action'
+                : 'ai_pdf_import',
+            quotaCode:
+              operation === 'short_action'
+                ? 'ai_short_action'
+                : 'ai_pdf_import',
+            deviceFingerprintHash: await hashFingerprint(
+              context.deviceFingerprint,
+              dependencies.deviceFingerprintPepper,
+            ),
+            platform: context.platform,
+            clientVersion: context.clientVersion,
+            idempotencyKeyHash,
+            requestFingerprint,
+            requestId,
+          });
+          if (reservation.replayed) {
+            ai = 'replayed';
+            if (reservation.status === 'released')
+              throw new ApiError(
+                409,
+                'ai_request_released',
+                'Cette tentative a été annulée. Utilisez une nouvelle demande.',
+              );
+            status = reservation.status === 'succeeded' ? 200 : 202;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v5',
+                operation,
+                status: reservation.status,
+                result: null,
+                replayed: true,
+                quota: quotaView(reservation),
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          }
+          if (request.signal.aborted) {
+            reservation = await dependencies.aiQuotaRepository.release(
+              profile.id,
+              reservation.id,
+            );
+            ai = 'released';
+            throw new ApiError(
+              408,
+              'ai_request_cancelled',
+              'Demande IA annulée.',
+            );
+          }
+          try {
+            const result = await dependencies.aiProvider.execute(
+              providerInput,
+              requestId,
+            );
+            validateProviderResult(
+              providerInput,
+              result,
+              dependencies.aiPolicy.maxResponseBytes,
+            );
+            reservation = await dependencies.aiQuotaRepository.confirm(
+              profile.id,
+              reservation.id,
+            );
+            ai = 'succeeded';
+            status = 200;
+            return jsonResponse(
+              {
+                contractVersion: '2026-09-v5',
+                operation,
+                status: reservation.status,
+                result,
+                replayed: false,
+                quota: quotaView(reservation),
+                request_id: requestId,
+              },
+              status,
+              requestId,
+              origin,
+              dependencies.allowedOrigins,
+            );
+          } catch (error) {
+            const providerError =
+              error instanceof AiProviderError
+                ? error
+                : new AiProviderError(
+                    'uncertain',
+                    'ai_provider_unavailable',
+                    'Fournisseur IA indisponible.',
+                  );
+            if (providerError.certainty === 'uncertain') {
+              await dependencies.aiQuotaRepository.markUncertain(
+                profile.id,
+                reservation.id,
+              );
+              ai = 'uncertain';
+              throw new ApiError(
+                504,
+                providerError.code,
+                'Résultat IA incertain. Réconciliez cette demande avant de réessayer.',
+              );
+            }
+            await dependencies.aiQuotaRepository.release(
+              profile.id,
+              reservation.id,
+            );
+            ai = 'released';
+            throw new ApiError(502, providerError.code, providerError.message);
+          }
+        }
+
+        if (request.method === 'POST' && url.pathname === '/v4/ai/reconcile') {
+          if (
+            !dependencies.aiQuotaRepository ||
+            !dependencies.aiIdempotencyPepper
+          )
+            throw new ApiError(
+              503,
+              'ai_unconfigured',
+              'Service IA indisponible.',
+            );
+          const body = await readObjectBody(request);
+          assertExactKeys(body, ['idempotencyKey']);
+          const idempotencyKey = readString(body, 'idempotencyKey', 128);
+          if (!/^[A-Za-z0-9._:-]{16,128}$/.test(idempotencyKey))
+            throw new ApiError(
+              400,
+              'invalid_idempotency_key',
+              'Clé d’idempotence invalide.',
+            );
+          const idempotencyKeyHash = await hashFingerprint(
+            `${profile.id}:idempotency:${idempotencyKey}`,
+            dependencies.aiIdempotencyPepper,
+          );
+          const reservation = await dependencies.aiQuotaRepository.reconcile(
+            profile.id,
+            idempotencyKeyHash,
+          );
+          if (!reservation)
+            throw new ApiError(
+              404,
+              'ai_request_missing',
+              'Demande IA introuvable.',
+            );
+          ai = 'replayed';
+          status = 200;
+          return jsonResponse(
+            {
+              contractVersion: '2026-09-v5',
+              operation: reservation.operation,
+              status: reservation.status,
+              replayed: true,
+              quota: quotaView(reservation),
+              request_id: requestId,
+            },
+            status,
+            requestId,
+            origin,
+            dependencies.allowedOrigins,
+          );
         }
 
         if (request.method === 'GET' && url.pathname === '/v1/me') {
@@ -824,6 +1242,7 @@ export function createCommercialWorker(
             outcome:
               status >= 500 ? 'unavailable' : status >= 400 ? 'rejected' : 'ok',
             webhook,
+            ai,
           });
         } catch {
           /* Observability failure must not replay a successful mutation. */

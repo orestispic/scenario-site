@@ -21,6 +21,8 @@ type LocalProfileState = {
   offerCode: LocalTestProfile;
   deviceLimit: number;
   entitlements: EntitlementSnapshot['entitlements'];
+  quotaLimits: Record<string, number>;
+  quotaPeriods: Record<string, 'month' | 'lifetime'>;
   devices: DeviceView[];
   deviceIdsByFingerprint: Map<string, string>;
   purchasedGrant: {
@@ -31,6 +33,8 @@ type LocalProfileState = {
     expiresAt: string | null;
     deviceLimit: number;
     entitlements: EntitlementSnapshot['entitlements'];
+    quotaLimits: Record<string, number>;
+    quotaPeriods: Record<string, 'month' | 'lifetime'>;
   } | null;
 };
 
@@ -44,6 +48,7 @@ function localState(
   profile: LocalTestProfile,
   deviceLimit: number,
   entitlements: EntitlementSnapshot['entitlements'],
+  quotaLimits: Record<string, number> = {},
 ): LocalProfileState {
   const id = LOCAL_PROFILE_IDS[profile];
   return {
@@ -60,6 +65,10 @@ function localState(
     offerCode: profile,
     deviceLimit,
     entitlements,
+    quotaLimits,
+    quotaPeriods: Object.fromEntries(
+      Object.keys(quotaLimits).map((code) => [code, 'month']),
+    ),
     devices: [],
     deviceIdsByFingerprint: new Map(),
     purchasedGrant: null,
@@ -76,21 +85,41 @@ export class LocalTestRepository implements CommercialRepository {
     ],
     [
       'local-author',
-      localState('author', 2, [
-        { code: 'local.edit', enabled: true, value: null },
-        { code: 'ai.actions', enabled: true, value: null },
-      ]),
+      localState(
+        'author',
+        2,
+        [
+          { code: 'local.edit', enabled: true, value: null },
+          { code: 'ai.actions', enabled: true, value: null },
+          { code: 'ai_short_action', enabled: true, value: null },
+          { code: 'ai_pdf_import', enabled: true, value: null },
+        ],
+        { ai_short_action: 6, ai_pdf_import: 2 },
+      ),
     ],
     [
       'local-studio',
-      localState('studio', 3, [
-        { code: 'local.edit', enabled: true, value: null },
-        { code: 'ai.actions', enabled: true, value: null },
-        { code: 'cloud.sync', enabled: true, value: null },
-      ]),
+      localState(
+        'studio',
+        3,
+        [
+          { code: 'local.edit', enabled: true, value: null },
+          { code: 'ai.actions', enabled: true, value: null },
+          { code: 'ai_short_action', enabled: true, value: null },
+          { code: 'ai_pdf_import', enabled: true, value: null },
+          { code: 'cloud.sync', enabled: true, value: null },
+        ],
+        { ai_short_action: 10, ai_pdf_import: 4 },
+      ),
     ],
   ]);
   readonly audit: Array<{ profileId: string | null; action: string }> = [];
+  readonly aiUsageEvents: Array<{
+    profileId: string;
+    quotaCode: string;
+    snapshotId: string;
+    requestId: string;
+  }> = [];
 
   async getConfiguration() {
     return {
@@ -123,6 +152,8 @@ export class LocalTestRepository implements CommercialRepository {
           entitlements: structuredClone(purchased.entitlements),
         },
         deviceLimit: purchased.deviceLimit,
+        quotaLimits: structuredClone(purchased.quotaLimits),
+        quotaPeriods: structuredClone(purchased.quotaPeriods),
       };
     }
     const issuedAt = new Date();
@@ -137,11 +168,34 @@ export class LocalTestRepository implements CommercialRepository {
         entitlements: structuredClone(state.entitlements),
       },
       deviceLimit: state.deviceLimit,
+      quotaLimits: structuredClone(state.quotaLimits),
+      quotaPeriods: structuredClone(state.quotaPeriods),
     };
   }
 
   async listDevices(profileId: string): Promise<DeviceView[]> {
     return structuredClone(this.requireState(profileId).devices);
+  }
+
+  hasActiveDevice(
+    profileId: string,
+    fingerprintHash: string,
+    platform: DeviceView['platform'],
+  ): boolean {
+    const state = this.findByProfileId(profileId);
+    const id = state?.deviceIdsByFingerprint.get(fingerprintHash);
+    return Boolean(
+      state?.devices.some(
+        (device) =>
+          device.id === id &&
+          device.status === 'active' &&
+          device.platform === platform,
+      ),
+    );
+  }
+
+  minimumSupportedVersion(_platform: DeviceView['platform']): string {
+    return '0.1.0';
   }
 
   async activateDevice(
@@ -204,7 +258,22 @@ export class LocalTestRepository implements CommercialRepository {
 
   async getUsage(profileId: string): Promise<UsageView[]> {
     this.requireState(profileId);
-    return [];
+    const totals = new Map<string, number>();
+    for (const event of this.aiUsageEvents.filter(
+      (item) => item.profileId === profileId,
+    ))
+      totals.set(event.quotaCode, (totals.get(event.quotaCode) ?? 0) + 1);
+    return [...totals].map(([quotaCode, used]) => ({
+      quotaCode,
+      used,
+      limit: null,
+      periodEndsAt: null,
+    }));
+  }
+
+  recordAiUsage(event: (typeof this.aiUsageEvents)[number]): void {
+    if (!this.aiUsageEvents.some((item) => item.requestId === event.requestId))
+      this.aiUsageEvents.push(structuredClone(event));
   }
 
   async logout(_accessToken?: string): Promise<void> {}
@@ -249,11 +318,18 @@ export class LocalTestRepository implements CommercialRepository {
       offlineValidUntil: string;
       deviceLimit: number;
       entitlements: EntitlementSnapshot['entitlements'];
+      quotaLimits?: Record<string, number>;
+      quotaPeriods?: Record<string, 'month' | 'lifetime'>;
     },
   ): EntitlementSnapshot {
     const state = this.requireState(profileId);
     const snapshotId = crypto.randomUUID();
-    state.purchasedGrant = { ...structuredClone(grant), snapshotId };
+    state.purchasedGrant = {
+      ...structuredClone(grant),
+      quotaLimits: structuredClone(grant.quotaLimits ?? state.quotaLimits),
+      quotaPeriods: structuredClone(grant.quotaPeriods ?? state.quotaPeriods),
+      snapshotId,
+    };
     return {
       id: snapshotId,
       configurationVersion: grant.configurationVersion,

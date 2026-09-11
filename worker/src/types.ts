@@ -12,6 +12,8 @@ import type { StripeGateway } from './stripe.ts';
 import type { StripeWebhookVerifier } from './stripeWebhook.ts';
 import type { LimiterNamespace } from './distributedRateLimit.ts';
 import type { Telemetry } from './observability.ts';
+import type { AiProvider } from './aiProvider.ts';
+import type { AiQuotaRepository } from './aiQuota.ts';
 
 export interface WorkerEnvironment {
   SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
@@ -32,6 +34,15 @@ export interface WorkerEnvironment {
   STRIPE_WEBHOOK_SECRET: string;
   STRIPE_WEBHOOK_TOLERANCE_SECONDS?: string;
   ACTIVATION_KEY_PEPPER: string;
+  OPENAI_API_KEY: string;
+  OPENAI_SHORT_ACTION_MODEL: string;
+  OPENAI_PDF_IMPORT_MODEL: string;
+  AI_PROVIDER_TIMEOUT_MS?: string;
+  AI_SHORT_MAX_BODY_BYTES?: string;
+  AI_PDF_MAX_BODY_BYTES?: string;
+  AI_MAX_TRANSLATION_SEGMENTS?: string;
+  AI_MAX_RESPONSE_BYTES?: string;
+  AI_IDEMPOTENCY_PEPPER: string;
 }
 
 export interface AuthenticatedIdentity {
@@ -47,6 +58,8 @@ export interface ProfileRecord extends MeResponse {
 export interface EntitlementRecord {
   snapshot: EntitlementSnapshot;
   deviceLimit: number;
+  quotaLimits: Record<string, number>;
+  quotaPeriods: Record<string, 'month' | 'lifetime'>;
 }
 
 export interface ActivateDeviceInput {
@@ -118,4 +131,13 @@ export type WorkerDependencies = {
   billingRepository: BillingRepository;
   stripeGateway: StripeGateway;
   stripeWebhookVerifier: StripeWebhookVerifier;
+  aiProvider?: AiProvider;
+  aiQuotaRepository?: AiQuotaRepository;
+  aiIdempotencyPepper?: string;
+  aiPolicy?: {
+    shortMaxBodyBytes: number;
+    pdfMaxBodyBytes: number;
+    maxTranslationSegments: number;
+    maxResponseBytes: number;
+  };
 };

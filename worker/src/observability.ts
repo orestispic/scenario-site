@@ -15,6 +15,9 @@ export const API_ROUTES = new Set([
   '/v2/activation-keys/status',
   '/v2/activation-keys/redeem',
   '/v2/activation-keys/revoke',
+  '/v4/ai/actions',
+  '/v4/ai/pdf-imports',
+  '/v4/ai/reconcile',
 ]);
 export interface RequestMetric {
   request_id: string;
@@ -24,6 +27,7 @@ export interface RequestMetric {
   duration_ms: number;
   outcome: 'ok' | 'rejected' | 'unavailable';
   webhook: 'none' | 'processed' | 'replayed' | 'failed';
+  ai?: 'none' | 'succeeded' | 'replayed' | 'released' | 'uncertain';
 }
 export interface Telemetry {
   record(metric: RequestMetric): void;
@@ -43,6 +47,7 @@ export const structuredTelemetry: Telemetry = {
         duration_ms: metric.duration_ms,
         outcome: metric.outcome,
         webhook: metric.webhook,
+        ai: metric.ai ?? 'none',
       }),
     );
   },

@@ -5,7 +5,7 @@ import { Miniflare, Log, LogLevel } from 'miniflare';
 
 const runtime = new Miniflare({
   modules: true,
-  script: await readFile('.wrangler/phase4-local/local-test.js', 'utf8'),
+  script: await readFile('.wrangler/phase5-local/local-test.js', 'utf8'),
   compatibilityDate: '2026-05-22',
   compatibilityFlags: ['nodejs_compat'],
   log: new Log(LogLevel.ERROR),
@@ -109,6 +109,34 @@ try {
   });
   assert.equal(redeemed.status, 201);
   const deviceId = (await redeemed.json()).activation.deviceId;
+  const aiHeaders = {
+    'Idempotency-Key': 'workerd-short-action-0001',
+    'X-Scenario-Client-Version': '0.1.7',
+    'X-Scenario-Device-Fingerprint': 'workerd-device-fingerprint',
+    'X-Scenario-Platform': 'windows',
+  };
+  const actionBody = {
+    kind: 'rewrite',
+    instruction: 'Corrige.',
+    text: 'Fixture sans contenu utilisateur.',
+  };
+  const action = await call('/v4/ai/actions', actionBody, aiHeaders);
+  assert.equal(action.status, 200);
+  const actionResult = await action.json();
+  assert.equal(actionResult.contractVersion, '2026-09-v5');
+  assert.equal(actionResult.result.kind, 'text');
+  const replay = await (
+    await call('/v4/ai/actions', actionBody, aiHeaders)
+  ).json();
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.result, null);
+  const pdf = await call(
+    '/v4/ai/pdf-imports',
+    { extractedText: 'INT. TEST - JOUR\nUne fixture déterministe.' },
+    { ...aiHeaders, 'Idempotency-Key': 'workerd-pdf-import-00001' },
+  );
+  assert.equal(pdf.status, 200);
+  assert.equal((await pdf.json()).result.kind, 'scenario_json');
   assert.equal(
     (await call('/v1/devices/deactivate', { deviceId })).status,
     204,
@@ -142,7 +170,7 @@ try {
     401,
   );
   console.log(
-    'workerd local E2E passed: registration/login, Checkout, verified webhook/replay, signed rights, device/key activation and revocation, refresh/logout.',
+    'workerd local E2E passed: registration/login, Checkout, verified webhook/replay, signed rights, deterministic AI/idempotency/PDF, device/key activation and revocation, refresh/logout.',
   );
 } finally {
   await runtime.dispose();

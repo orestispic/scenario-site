@@ -42,10 +42,16 @@ async function scan(directory) {
         `Token persistence: ${path}`,
       );
       assert.ok(
-        !/SUPABASE_SERVICE_ROLE_KEY|STRIPE_SECRET_KEY|OFFLINE_GRANT_PRIVATE_JWK/.test(
+        !/SUPABASE_SERVICE_ROLE_KEY|STRIPE_SECRET_KEY|OFFLINE_GRANT_PRIVATE_JWK|OPENAI_API_KEY|OPENAI_(?:SHORT_ACTION|PDF_IMPORT)_MODEL/.test(
           text,
         ),
         `Server config in client: ${path}`,
+      );
+    }
+    if (appMode) {
+      assert.ok(
+        !/api\.openai\.com\/v1\/responses|OPENAI_API_KEY/.test(text),
+        `Direct AI provider access in application: ${path}`,
       );
     }
   }

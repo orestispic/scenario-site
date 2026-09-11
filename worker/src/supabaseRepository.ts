@@ -35,6 +35,7 @@ type DatabaseSnapshot = {
     offline_valid_until?: string;
     device_limit?: number;
     quota_limits?: Record<string, number>;
+    quota_periods?: Record<string, 'month' | 'lifetime'>;
   };
 };
 type DatabaseCompatibility = {
@@ -114,6 +115,8 @@ export class SupabaseRestRepository implements CommercialRepository {
         entitlements: row.payload.entitlements,
       },
       deviceLimit: row.payload.device_limit,
+      quotaLimits: row.payload.quota_limits ?? {},
+      quotaPeriods: row.payload.quota_periods ?? {},
     };
   }
 

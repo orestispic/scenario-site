@@ -6,6 +6,8 @@ La définition TypeScript de phase 1 est `lib/commercial/contracts.ts`, version 
 
 La phase 2 conserve ce fichier v1 intact et ajoute `lib/commercial/contracts-v2.ts`, version `2026-09-v2`. Le Worker implémente les routes exactes `/v1/config`, `/v1/me`, `/v1/entitlements`, `/v1/devices`, `/v1/devices/activate`, `/v1/devices/deactivate`, `/v1/usage` et `/v1/auth/logout`. L’ancien agrégat `/api/v1/me/account-overview` reste une spécification de phase 1, non exposée par le Worker v2.
 
+La phase 3 ajoute `lib/commercial/contracts-v3.ts`, version `2026-09-v3`, sans modifier v1/v2. Elle expose `/v2/billing`, `/v2/checkout/sessions`, `/v2/billing/portal-sessions`, `/v2/stripe/webhook`, `/v2/activation-keys/status`, `/v2/activation-keys/redeem` et `/v2/activation-keys/revoke`. Les choix clients se limitent à un identifiant de sélection opaque validé contre la configuration serveur; aucun droit, quota, rôle, limite ou identifiant Stripe n’est accepté du client.
+
 | Domaine | Route et méthode | Intention | Autorisation |
 | --- | --- | --- | --- |
 | Authentification | `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/password/reset/request`, `/auth/password/reset/confirm` | Compte et session | Publique avec rate limit, sauf logout. |

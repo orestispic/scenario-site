@@ -5,11 +5,14 @@ import type {
   PublicConfiguration,
   SignedOfflineGrant,
   UsageView,
-} from "../../lib/commercial/contracts-v2.ts";
-import type { EntitlementSnapshot } from "../../lib/commercial/contracts.ts";
+} from '../../lib/commercial/contracts-v2.ts';
+import type { EntitlementSnapshot } from '../../lib/commercial/contracts.ts';
+import type { BillingRepository } from './billing.ts';
+import type { StripeGateway } from './stripe.ts';
+import type { StripeWebhookVerifier } from './stripeWebhook.ts';
 
 export interface WorkerEnvironment {
-  SCENARIO_ENVIRONMENT: "test" | "staging" | "production";
+  SCENARIO_ENVIRONMENT: 'test' | 'staging' | 'production';
   API_ALLOWED_ORIGINS: string;
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
@@ -21,6 +24,10 @@ export interface WorkerEnvironment {
   OFFLINE_GRANT_KEY_ID: string;
   RATE_LIMIT_MAX_REQUESTS?: string;
   RATE_LIMIT_WINDOW_SECONDS?: string;
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_WEBHOOK_TOLERANCE_SECONDS?: string;
+  ACTIVATION_KEY_PEPPER: string;
 }
 
 export interface AuthenticatedIdentity {
@@ -41,19 +48,33 @@ export interface EntitlementRecord {
 export interface ActivateDeviceInput {
   fingerprintHash: string;
   label: string;
-  platform: "windows" | "macos";
+  platform: 'windows' | 'macos';
 }
 
 export interface CommercialRepository {
-  getConfiguration(): Promise<Omit<PublicConfiguration, "environment" | "offlineGrantPublicKey" | "offlineGrantKeyId">>;
+  getConfiguration(): Promise<
+    Omit<
+      PublicConfiguration,
+      'environment' | 'offlineGrantPublicKey' | 'offlineGrantKeyId'
+    >
+  >;
   getProfile(authUserId: string): Promise<ProfileRecord | null>;
   getEntitlements(profileId: string): Promise<EntitlementRecord | null>;
   listDevices(profileId: string): Promise<DeviceView[]>;
-  activateDevice(profileId: string, input: ActivateDeviceInput): Promise<DeviceView>;
+  activateDevice(
+    profileId: string,
+    input: ActivateDeviceInput,
+  ): Promise<DeviceView>;
   deactivateDevice(profileId: string, deviceId: string): Promise<void>;
   getUsage(profileId: string): Promise<UsageView[]>;
   logout(accessToken: string): Promise<void>;
-  appendAudit(event: { profileId: string | null; action: string; entityType: string; entityId?: string; requestId: string }): Promise<void>;
+  appendAudit(event: {
+    profileId: string | null;
+    action: string;
+    entityType: string;
+    entityId?: string;
+    requestId: string;
+  }): Promise<void>;
 }
 
 export interface TokenVerifier {
@@ -71,17 +92,25 @@ export interface RateLimiter {
 }
 
 export class CommercialRepositoryError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
     super(message);
-    this.name = "CommercialRepositoryError";
+    this.name = 'CommercialRepositoryError';
   }
 }
 
 export type WorkerDependencies = {
-  environment: "test" | "staging" | "production";
+  environment: 'test' | 'staging' | 'production';
   allowedOrigins: string[];
   repository: CommercialRepository;
   tokenVerifier: TokenVerifier;
   offlineGrantSigner: OfflineGrantSigner;
   rateLimiter: RateLimiter;
+  activationKeyPepper: string;
+  billingRepository: BillingRepository;
+  stripeGateway: StripeGateway;
+  stripeWebhookVerifier: StripeWebhookVerifier;
 };

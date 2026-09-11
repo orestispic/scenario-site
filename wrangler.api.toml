@@ -1,6 +1,6 @@
 name = "scenario-commercial-api"
 main = "worker/src/index.ts"
-compatibility_date = "2026-09-01"
+compatibility_date = "2026-05-22"
 compatibility_flags = ["nodejs_compat"]
 
 # All values are supplied with `wrangler secret put` or environment-specific

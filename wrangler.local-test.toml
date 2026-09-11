@@ -1,6 +1,6 @@
 name = "scenario-commercial-api-local-test"
 main = "worker/src/local-test.ts"
-compatibility_date = "2026-09-01"
+compatibility_date = "2026-05-22"
 compatibility_flags = ["nodejs_compat"]
 
 # This entry point owns only deterministic local identities. It imports no

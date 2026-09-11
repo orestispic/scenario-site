@@ -1,4 +1,6 @@
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 select plan(33);
 select has_table('public','users','compatibility identity registry exists');
 select ok((select relrowsecurity from pg_class where oid='public.users'::regclass),'compatibility identity registry has RLS enabled');

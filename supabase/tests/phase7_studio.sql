@@ -1,4 +1,6 @@
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 select plan(12);
 
 select has_table('public','studios','studios exists');

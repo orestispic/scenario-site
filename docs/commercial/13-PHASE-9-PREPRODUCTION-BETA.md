@@ -44,3 +44,13 @@ Le Worker accepte `SUPABASE_SECRET_KEY` et conserve temporairement `SUPABASE_SER
 Les tickets ne sont conservés que sous forme SHA-256 et restent à usage unique. Les connexions et la présence sont éphémères ; elles ne sont jamais écrites dans le stockage durable. Les opérations, conflits, tombstones et snapshots bornés survivent en revanche au remplacement d'un isolate afin de permettre une reprise déterministe du canal de test. Cette persistance de transport ne remplace pas le journal Supabase append-only de phase 8 : les migrations distantes et la réconciliation intégrée doivent réussir avant d'ouvrir la bêta.
 
 La configuration préproduction déclare la classe et sa migration Durable Object, mais `workers_dev`, les URL de preview et les routes publiques restent désactivés. Une compilation à blanc n'est pas un déploiement ; la création distante du Worker et du Durable Object exige une autorisation explicite séparée.
+
+## Validation externe contrôlée du 12 septembre 2026
+
+Après autorisation explicite, un projet Supabase de test isolé a été lié et les dix migrations versionnées ont été appliquées avec `supabase migration up --linked`. `supabase migration list --linked` confirme une correspondance complète des versions locales et distantes. Le lint PostgreSQL hébergé ne remonte aucune erreur ; ses seuls avertissements concernent des paramètres conservés volontairement dans les RPC Studio pour préserver leurs signatures publiques.
+
+Les cinq suites pgTAP s'exécutent aussi sur le projet lié : 75 assertions couvrant RLS, quotas IA, synchronisation cloud, Studio et collaboration temps réel passent avec succès. Chaque suite force le rôle `postgres` uniquement dans sa transaction et termine par `rollback`, car le rôle de connexion temporaire de la CLI n'a pas `USAGE` sur le schéma hébergé `extensions`. Aucun privilège ni jeu de données de test ne persiste.
+
+Après une autorisation distincte, le Worker `scenario-commercial-api-preproduction` et ses deux classes Durable Object SQLite ont été créés sur Cloudflare. La version n'a aucune cible de déploiement : `workers_dev=false`, previews désactivées et aucune route publique. Treize valeurs Supabase, peppers et clés P-256 ont été générées ou transférées directement vers le coffre chiffré Cloudflare sans être affichées ni ajoutées à Git.
+
+Restent bloqués avant une bêta : domaine HTTPS privé, configuration Stripe exclusivement test, configuration IA explicitement autorisée, stockage objet de test et réconciliation intégrée du canal avec le journal Supabase append-only. Aucun paiement ou appel IA réel n'a été déclenché.

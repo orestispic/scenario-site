@@ -1,5 +1,7 @@
--- Run only on disposable Supabase local: supabase test db.
+-- Run only on disposable local or explicitly isolated linked Supabase test.
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 create extension if not exists pgtap with schema extensions;
 set search_path = public, extensions;
 select plan(10);

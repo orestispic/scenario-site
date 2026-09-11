@@ -53,4 +53,6 @@ Les cinq suites pgTAP s'exécutent aussi sur le projet lié : 75 assertions couv
 
 Après une autorisation distincte, le Worker `scenario-commercial-api-preproduction` et ses deux classes Durable Object SQLite ont été créés sur Cloudflare. La version n'a aucune cible de déploiement : `workers_dev=false`, previews désactivées et aucune route publique. Treize valeurs Supabase, peppers et clés P-256 ont été générées ou transférées directement vers le coffre chiffré Cloudflare sans être affichées ni ajoutées à Git.
 
-Restent bloqués avant une bêta : domaine HTTPS privé, configuration Stripe exclusivement test, configuration IA explicitement autorisée, stockage objet de test et réconciliation intégrée du canal avec le journal Supabase append-only. Aucun paiement ou appel IA réel n'a été déclenché.
+Le bucket Supabase `scenario-documents-preproduction` a ensuite été créé par l'API d'administration et relu pour validation. Il est privé, limité à 4 194 304 octets par objet et n'accepte que le MIME `application/vnd.scenario+json`, conformément aux bornes du Worker. Aucun document utilisateur ni fixture n'y a été téléversé pendant cette validation.
+
+Restent bloqués avant une bêta : domaine HTTPS privé, configuration Stripe exclusivement test, configuration IA explicitement autorisée et réconciliation intégrée du canal avec le journal Supabase append-only. Aucun paiement ou appel IA réel n'a été déclenché.

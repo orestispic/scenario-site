@@ -16,6 +16,7 @@
     "start:api:local": "wrangler dev --config wrangler.local-test.toml",
     "activation-key:local:create": "node scripts/create-local-activation-key.mjs",
     "activation-key:local:revoke": "node scripts/revoke-local-activation-key.mjs",
+    "phase9:preflight": "node scripts/phase9-preflight.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

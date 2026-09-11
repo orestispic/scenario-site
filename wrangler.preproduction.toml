@@ -34,9 +34,17 @@ STUDIO_MAX_PENDING_EVENTS = "500"
 name = "RATE_LIMITER"
 class_name = "RateLimitBucket"
 
+[[durable_objects.bindings]]
+name = "STUDIO_REALTIME_CHANNEL"
+class_name = "StudioRealtimeChannel"
+
 [[migrations]]
 tag = "phase4-rate-limit-v1"
 new_sqlite_classes = ["RateLimitBucket"]
+
+[[migrations]]
+tag = "phase9-studio-channel-v1"
+new_sqlite_classes = ["StudioRealtimeChannel"]
 
 [observability]
 enabled = true

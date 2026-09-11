@@ -24,6 +24,10 @@ export interface RealtimePolicy extends CollaborationLimits {
 export interface CollaborationConnectionContext {
   context: StudioContext;
   origin: string;
+  authorization?: {
+    scenarioId: string;
+    role: CollaborationRole;
+  };
 }
 
 export interface RealtimeCollaborationTransport {
@@ -238,6 +242,28 @@ type Channel = {
   >;
 };
 
+export type DurableRealtimeState = {
+  tickets: Ticket[];
+  channels: Array<{
+    studioId: string;
+    cursor: number;
+    minimumCursor: number;
+    events: CollaborationEvent[];
+    operations: Array<[string, CollaborativeOperationRecord]>;
+    blocks: Array<[string, Register]>;
+    conflicts: CollaborationConflict[];
+    snapshots: Array<
+      Omit<CollaborationSnapshotResponse, 'contractVersion' | 'request_id'>
+    >;
+    compactions: Array<
+      [
+        string,
+        Omit<CollaborationSnapshotResponse, 'contractVersion' | 'request_id'>,
+      ]
+    >;
+  }>;
+};
+
 function canonical(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -298,6 +324,57 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
     readonly policy: RealtimePolicy,
     private readonly now: () => number = Date.now,
   ) {}
+
+  restoreDurableState(state: DurableRealtimeState | undefined): void {
+    if (!state) return;
+    this.tickets.clear();
+    for (const ticket of state.tickets)
+      if (!ticket.used && ticket.expiresAt > this.now())
+        this.tickets.set(ticket.hash, structuredClone(ticket));
+    this.channels.clear();
+    for (const value of state.channels)
+      this.channels.set(value.studioId, {
+        cursor: value.cursor,
+        minimumCursor: value.minimumCursor,
+        events: structuredClone(value.events),
+        operations: new Map(structuredClone(value.operations)),
+        blocks: new Map(structuredClone(value.blocks)),
+        conflicts: structuredClone(value.conflicts),
+        snapshots: structuredClone(value.snapshots),
+        compactions: new Map(structuredClone(value.compactions)),
+      });
+  }
+
+  durableState(): DurableRealtimeState {
+    this.sweep();
+    return {
+      tickets: [...this.tickets.values()].map((value) =>
+        structuredClone(value),
+      ),
+      channels: [...this.channels.entries()].map(([studioId, value]) => ({
+        studioId,
+        cursor: value.cursor,
+        minimumCursor: value.minimumCursor,
+        events: value.events
+          .filter((event) => event.type !== 'presence.changed')
+          .map((event) => structuredClone(event)),
+        operations: [...value.operations.entries()].map(([key, item]) => [
+          key,
+          structuredClone(item),
+        ]),
+        blocks: [...value.blocks.entries()].map(([key, item]) => [
+          key,
+          structuredClone(item),
+        ]),
+        conflicts: structuredClone(value.conflicts),
+        snapshots: structuredClone(value.snapshots),
+        compactions: [...value.compactions.entries()].map(([key, item]) => [
+          key,
+          structuredClone(item),
+        ]),
+      })),
+    };
+  }
 
   async issueTicket(
     input: CollaborationConnectionContext & {
@@ -468,7 +545,8 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
     }
     connection.ackCursor = Math.max(connection.ackCursor, input.afterCursor);
     const available = channel.events.filter(
-      (event) => event.cursor > input.afterCursor,
+      (event) =>
+        event.type !== 'presence.changed' && event.cursor > input.afterCursor,
     );
     const events = available
       .slice(0, this.policy.maximumEventsPerPoll)
@@ -671,6 +749,8 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
     profileId: string,
     reason: ConnectionCloseReason = 'revoked',
   ) {
+    for (const ticket of this.tickets.values())
+      if (ticket.profileId === profileId) ticket.used = true;
     for (const connection of this.connections.values())
       if (connection.profileId === profileId)
         this.close(connection, reason, crypto.randomUUID());
@@ -680,6 +760,9 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
     profileId: string,
     reason: ConnectionCloseReason = 'revoked',
   ) {
+    for (const ticket of this.tickets.values())
+      if (ticket.studioId === studioId && ticket.profileId === profileId)
+        ticket.used = true;
     for (const connection of this.connections.values())
       if (
         connection.studioId === studioId &&
@@ -773,11 +856,16 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
     );
   }
   private presenceEvent(studioId: string) {
-    this.append(studioId, {
-      cursor: 0,
-      type: 'presence.changed',
-      presence: this.presence(studioId),
-    });
+    const channel = this.channel(studioId);
+    this.append(
+      studioId,
+      {
+        cursor: channel.cursor,
+        type: 'presence.changed',
+        presence: this.presence(studioId),
+      },
+      false,
+    );
   }
   private close(
     connection: Connection,

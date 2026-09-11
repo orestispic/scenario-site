@@ -2,6 +2,7 @@ import { SupabaseJwksTokenVerifier } from './jwt.ts';
 import { EcdsaOfflineGrantSigner } from './offlineGrant.ts';
 import { DistributedRateLimiter } from './distributedRateLimit.ts';
 export { RateLimitBucket } from './distributedRateLimit.ts';
+export { StudioRealtimeChannel } from './studioRealtimeChannel.ts';
 import { SupabaseRestRepository } from './supabaseRepository.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { createCommercialWorker } from './worker.ts';

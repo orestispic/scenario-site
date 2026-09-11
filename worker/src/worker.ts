@@ -962,17 +962,22 @@ export function createCommercialWorker(
             platform: headers.platform,
             clientVersion: headers.clientVersion,
           };
-          await dependencies.studioRepository.authorizeRealtime(
-            context,
-            realtimeRoute.studioId,
-            realtimeRoute.route.endsWith('/operations') ||
-              realtimeRoute.route.endsWith('/compact'),
-          );
+          const authorization =
+            await dependencies.studioRepository.authorizeRealtime(
+              context,
+              realtimeRoute.studioId,
+              realtimeRoute.route.endsWith('/operations') ||
+                realtimeRoute.route.endsWith('/compact'),
+            );
           const common = {
             context,
             origin: origin ?? 'native:no-origin',
             studioId: realtimeRoute.studioId,
             requestId,
+            authorization: {
+              scenarioId: authorization.scenarioId,
+              role: authorization.role,
+            },
           };
           const respond = (
             value: Record<string, unknown>,

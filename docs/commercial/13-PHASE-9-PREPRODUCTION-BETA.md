@@ -36,3 +36,11 @@ Les validations locales des phases précédentes restent acquises ; elles ne rem
 ## Compatibilité des clés Supabase actuelles
 
 Le Worker accepte `SUPABASE_SECRET_KEY` et conserve temporairement `SUPABASE_SERVICE_ROLE_KEY` pour les environnements historiques. Une clé `sb_secret_…` est envoyée uniquement dans l'en-tête `apikey` : elle n'est jamais traitée comme un jeton Bearer. Le client continue d'utiliser exclusivement la clé publique et les sessions utilisateur ; aucune clé serveur ne peut être intégrée au bundle ou au stockage local.
+
+## Canal Cloudflare de préproduction
+
+`StudioRealtimeChannel` implémente désormais le protocole interne `x-command` derrière une liaison Durable Object privée. L'API principale authentifie et réautorise chaque requête avant de transmettre au canal uniquement le profil, le Studio, le scénario et le rôle déjà validés. Le canal refuse toute commande métier sans cette autorisation bornée.
+
+Les tickets ne sont conservés que sous forme SHA-256 et restent à usage unique. Les connexions et la présence sont éphémères ; elles ne sont jamais écrites dans le stockage durable. Les opérations, conflits, tombstones et snapshots bornés survivent en revanche au remplacement d'un isolate afin de permettre une reprise déterministe du canal de test. Cette persistance de transport ne remplace pas le journal Supabase append-only de phase 8 : les migrations distantes et la réconciliation intégrée doivent réussir avant d'ouvrir la bêta.
+
+La configuration préproduction déclare la classe et sa migration Durable Object, mais `workers_dev`, les URL de preview et les routes publiques restent désactivés. Une compilation à blanc n'est pas un déploiement ; la création distante du Worker et du Durable Object exige une autorisation explicite séparée.

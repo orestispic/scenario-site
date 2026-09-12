@@ -152,17 +152,34 @@ async function login(definition, credentials, supabaseUrl, anonKey) {
   return { ...definition, accessToken: session.access_token };
 }
 
-async function logout(sessions, supabaseUrl, anonKey) {
+async function logout(
+  sessions,
+  supabaseUrl,
+  anonKey,
+  apiUrl,
+  clientVersion,
+  projectRef,
+) {
   await Promise.allSettled(
-    sessions.map((session) =>
-      fetch(`${supabaseUrl}/auth/v1/logout?scope=local`, {
+    sessions.map(async (session) => {
+      const workerResponse = await fetch(`${apiUrl}/v1/auth/logout`, {
+        method: 'POST',
+        headers: clientHeaders(
+          session,
+          fingerprint(session.role, projectRef),
+          clientVersion,
+        ),
+        body: '{}',
+      });
+      if (workerResponse.ok) return;
+      await fetch(`${supabaseUrl}/auth/v1/logout?scope=local`, {
         method: 'POST',
         headers: {
           apikey: anonKey,
           Authorization: `Bearer ${session.accessToken}`,
         },
-      }),
-    ),
+      });
+    }),
   );
 }
 
@@ -614,7 +631,14 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
     await Promise.allSettled(
       connections.map(({ input, id }) => disconnect(input, id)),
     );
-    await logout(sessions, supabaseUrl, anonKey);
+    await logout(
+      sessions,
+      supabaseUrl,
+      anonKey,
+      apiUrl,
+      clientVersion,
+      projectRef,
+    );
   }
 }
 

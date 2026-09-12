@@ -4,7 +4,7 @@
 
 Travail exclusivement dans les deux worktrees commerciaux. Le nom public est
 désormais **senario** (demande utilisateur). `senario.app` est un domaine
-**souhaité, non acheté et dont la disponibilité n'a pas été vérifiée**. Aucune
+**acheté depuis cette phase**, comme consigné dans l'addendum. Aucune
 adresse de contact ni certificat de signature Windows n'est disponible.
 Cette phase prépare la bêta ; elle ne certifie pas une ouverture commerciale.
 Pas de push, publication du site, paiement réel, e-mail réel ou appel IA payant.
@@ -133,7 +133,7 @@ restent **non exécutées**, Docker n'étant pas disponible sur cet hôte dans c
 Identité légale, conditions d'utilisation/vente, conservation, suppression/export
 de compte, sous-traitants, support et passage Stripe production nécessitent encore
 une décision et une revue. Le texte de confidentialité de bêta n'est pas présenté
-comme des mentions légales définitives. `senario.app` n'a pas été acheté/configuré.
+comme des mentions légales définitives. `senario.app` est acheté, mais pas connecté.
 
 ## Validation de ce lot
 

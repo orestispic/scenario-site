@@ -1,0 +1,28 @@
+/** Public beta information. Unapproved commercial policies are kept out of the bundle. */
+export function InformationPages() {
+  return <>
+    <section className="section help" id="support"><h2>Aide et support</h2>
+      <p>Pour la bêta privée, contactez la personne qui vous a invité. L’adresse e-mail de support est en cours de préparation.</p>
+      <details><summary>Signaler un problème</summary><p>Indiquez la version de senario, votre système, l’heure du problème et les étapes pour le reproduire. S’il apparaît, ajoutez l’identifiant de la demande. N’envoyez ni mot de passe, ni clé, ni scénario confidentiel. Masquez les informations personnelles sur les captures.</p></details>
+      <details><summary>Mettre votre travail en sécurité</summary><p>Enregistrez une copie de votre projet au format .scenario depuis le menu Fichier. Ce format conserve le projet modifiable ; un PDF sert à la lecture et ne remplace pas cette sauvegarde. En cas de conflit cloud, conservez une copie locale avant de choisir une version.</p></details>
+      <details><summary>Quitter la bêta ou demander vos données</summary><p>Adressez votre demande au contact de la bêta. La suppression du compte n’est pas encore disponible en libre-service. Exportez vos projets et organisez le transfert des projets partagés avant de demander leur suppression.</p></details>
+    </section>
+    <section className="section help" id="confidentialite"><h2>Vos données dans la bêta</h2>
+      <p>Information provisoire — la politique complète sera finalisée avant l’ouverture publique.</p>
+      <details open><summary>Projets locaux et projets cloud</summary><p>Les projets locaux restent sur votre appareil, sauf lorsque vous choisissez une opération cloud ou une fonction IA. Un projet cloud peut rester privé ou être partagé avec les membres que vous invitez. Les premières pages et commentaires font partie du projet partagé.</p></details>
+      <details><summary>Compte, services et journaux</summary><p>Supabase traite l’authentification et le stockage cloud ; Cloudflare exécute l’API et la collaboration ; Vercel héberge le site ; Stripe gère les essais de facturation. Les journaux applicatifs sont conçus pour exclure les textes des scénarios, prompts, réponses IA et secrets. Les fournisseurs peuvent conserver leurs propres journaux techniques. Les régions, durées de conservation et garanties de transfert doivent encore être documentées.</p></details>
+      <details><summary>Sessions et droits sur vos données</summary><p>Les jetons de connexion du site restent en mémoire jusqu’à la fermeture de la session. La prévisualisation privée utilise également l’authentification Vercel. Pour les questions d’accès, de rectification, d’export ou de suppression, utilisez le contact de votre bêta. Vous pouvez adresser une réclamation à la CNIL.</p></details>
+      <p>Les durées de conservation et la procédure de suppression des sauvegardes sont en cours de définition. Ne confiez pas de documents sensibles à cette bêta.</p>
+    </section>
+    <section className="section help" id="conditions"><h2>Conditions de la bêta privée</h2>
+      <p>La bêta permet d’évaluer senario avec des comptes et paiements de test. Les offres affichées ne constituent pas une vente active. Aucune disponibilité continue n’est promise à ce stade.</p>
+      <p>Vous conservez vos droits sur vos textes. Ne partagez que des contenus que vous êtes autorisé à utiliser, invitez uniquement les personnes concernées et conservez une sauvegarde personnelle. Les fonctions IA peuvent produire des erreurs : relisez leurs résultats.</p>
+      <p>Les conditions commerciales, les modalités de résiliation, la fiscalité, les garanties applicables et les informations de médiation sont à finaliser avant toute vente. Ces informations de bêta ne remplacent pas les futures CGU et CGV.</p>
+    </section>
+    <section className="section help" id="mentions"><h2>Mentions légales en préparation</h2>
+      <p>Projet porté par Orestis Picard (Orestis Production), SIRET 95295149900013. Domaine : senario.app.</p>
+      <p>Les coordonnées professionnelles de l’éditeur et les mentions d’hébergement complètes restent à renseigner avant la publication.</p>
+      <p>Le site est hébergé chez Vercel. Le contact de la bêta reste votre interlocuteur pendant cette préparation.</p>
+    </section>
+  </>;
+}

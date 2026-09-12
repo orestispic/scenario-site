@@ -16,6 +16,12 @@ export function validateBrowserConfig(config: BrowserAccountConfig): boolean {
 
 /** Take once, strip BEFORE any request/render. Confirmation remains explicit. */
 export function takeRecoveryHash(url: URL, replace: (url: string) => void): string | null {
+  const link = takeEmailLink(url, replace);
+  return link?.type === 'recovery' ? link.tokenHash : null;
+}
+
+export type EmailLink = { type: 'recovery' | 'signup'; tokenHash: string };
+export function takeEmailLink(url: URL, replace: (url: string) => void): EmailLink | null {
   const fragment = new URLSearchParams(url.hash.slice(1));
   const hash = fragment.get('token_hash') ?? url.searchParams.get('token_hash');
   const type = fragment.get('type') ?? url.searchParams.get('type');
@@ -24,7 +30,8 @@ export function takeRecoveryHash(url: URL, replace: (url: string) => void): stri
     // No redirect/next parameter survives a recovery link.
     replace(`${url.pathname}#compte`);
   }
-  return type === 'recovery' && hash && /^[a-f0-9]{32,128}$/i.test(hash) ? hash : null;
+  return (type === 'recovery' || type === 'signup') && hash && /^[a-f0-9]{32,128}$/i.test(hash)
+    ? { type, tokenHash: hash } : null;
 }
 
 export function safeStripeUrl(value: string, kind: 'checkout' | 'portal', testMode: boolean): string {
@@ -97,12 +104,20 @@ export class BrowserAccount {
     await this.auth('signup', { email, password, data: { display_name: displayName } });
   }
   async recover(email: string) { await this.auth('recover', { email }); }
+  async confirmEmail(tokenHash: string) {
+    if (!/^[a-f0-9]{32,128}$/i.test(tokenHash)) throw new Error('Lien de confirmation invalide.');
+    this.clear();
+    const epoch = this.generation;
+    try { this.accept(await this.auth('verify', { token_hash: tokenHash, type: 'signup' })); }
+    finally { if (epoch === this.generation) await this.signOut(); }
+  }
   async resetPassword(tokenHash: string, password: string) {
     this.clear();
+    const epoch = this.generation;
     try {
       const token = this.accept(await this.auth('verify', { token_hash: tokenHash, type: 'recovery' }));
       await this.auth('user', { password }, token, 'PUT');
-    } finally { await this.signOut(); }
+    } finally { if (epoch === this.generation) await this.signOut(); }
   }
   async token(): Promise<string> {
     if (!this.session) throw new Error('Connectez-vous pour continuer.');

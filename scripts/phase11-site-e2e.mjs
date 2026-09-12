@@ -15,7 +15,7 @@ const { chromium } = await import(process.env.SCENARIO_PLAYWRIGHT_PATH ? pathToF
 const runtime = await createLocalRuntime({ allowedOrigins: [origin], telemetry: { record() {} } });
 const browser = await chromium.launch({ channel: 'msedge', headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-const failures = []; let recovered = 0; let changed = 0; let checkout = 0;
+const failures = []; let recovered = 0; let changed = 0; let checkout = 0; let confirmed = 0;
 await context.route('**/*', async (route) => {
   const request = route.request(), url = new URL(request.url());
   if (url.origin === origin) return route.continue();
@@ -25,6 +25,7 @@ await context.route('**/*', async (route) => {
     return route.abort();
   }
   if (url.origin === auth) {
+    if (url.pathname === '/auth/v1/verify' && JSON.parse(request.postData() ?? '{}').type === 'signup') confirmed++;
     if (url.pathname === '/auth/v1/recover') recovered++;
     if (url.pathname === '/auth/v1/user') { assert.equal(request.method(), 'PUT'); changed++; }
     const data = ['/auth/v1/token', '/auth/v1/verify'].includes(url.pathname)
@@ -100,6 +101,14 @@ try {
     assert.equal(page.url(), `${origin}/#compte`);
     await page.getByRole('button', { name: 'Modifier mon mot de passe' }).click();
     await page.getByRole('status').getByText(/Mot de passe modifié/).waitFor(); assert.equal(changed, 1);
+    await page.goto(`${origin}/#token_hash=${'b'.repeat(64)}&type=signup`);
+    await page.getByRole('button', { name: 'Confirmer mon adresse', exact: true }).waitFor();
+    assert.equal(page.url(), `${origin}/#compte`); assert.equal(confirmed, 0);
+    await page.getByRole('button', { name: 'Confirmer mon adresse', exact: true }).click();
+    await page.getByRole('status').getByText(/Adresse confirmée/).waitFor(); assert.equal(confirmed, 1);
+    assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
+    for (const section of ['support', 'confidentialite', 'conditions', 'mentions'])
+      assert.equal(await page.locator(`#${section} h2`).count(), 1);
   }
   assert.deepEqual(failures, []);
   console.log(`PASS ${hosted ? 'HOSTED Supabase/Cloudflare (read-only)' : 'LOCAL simulated'}: catalogue, account, logout, mobile, no browser token storage${hosted ? '' : ', recovery, reset, Checkout redirect'}.`);

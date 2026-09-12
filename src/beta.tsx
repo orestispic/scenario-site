@@ -1,12 +1,13 @@
 /* oxlint-disable next/no-img-element -- Static Vite entry, not the legacy Vinext app. */
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserAccount, takeRecoveryHash, validateBrowserConfig, type BrowserAccountConfig } from '../lib/commercial/browser-account';
+import { BrowserAccount, takeEmailLink, validateBrowserConfig, type BrowserAccountConfig } from '../lib/commercial/browser-account';
+import { InformationPages } from './information';
 import type { PublicPlanView } from '../lib/commercial/contracts-v11';
 import './site.css';
 
 declare const __SENARIO_PUBLIC_CONFIG__: BrowserAccountConfig;
-let initialRecovery = takeRecoveryHash(new URL(location.href), (url) => history.replaceState(null, '', url));
+let initialEmailLink = takeEmailLink(new URL(location.href), (url) => history.replaceState(null, '', url));
 const account = validateBrowserConfig(__SENARIO_PUBLIC_CONFIG__) ? new BrowserAccount(__SENARIO_PUBLIC_CONFIG__) : null;
 type AccountView = Awaited<ReturnType<BrowserAccount['account']>>;
 const money = (unitAmountMinor: number, currency: string) => new Intl.NumberFormat('fr-FR', {
@@ -18,7 +19,8 @@ function App() {
   const [billingInterval, setBillingInterval] = useState<'year' | 'month'>('year');
   const [catalogError, setCatalogError] = useState('');
   const [view, setView] = useState<AccountView | null>(null);
-  const [recoveryHash, setRecoveryHash] = useState(() => { const value = initialRecovery; initialRecovery = null; return value; });
+  const [emailLink, setEmailLink] = useState(() => { const value = initialEmailLink; initialEmailLink = null; return value; });
+  const recoveryHash = emailLink?.type === 'recovery' ? emailLink.tokenHash : null;
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>(recoveryHash ? 'reset' : 'login');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,9 +29,16 @@ function App() {
     let active = true;
     if (account) void account.catalog().then((catalog) => { if (active) setPlans(catalog.plans); })
       .catch(() => { if (active) setCatalogError('Les offres sont temporairement indisponibles. Réessayez plus tard.'); });
-    const close = () => { account?.clear(); setView(null); setRecoveryHash(null); setMode('login'); };
+    const close = () => { account?.clear(); setView(null); setEmailLink(null); setMode('login'); };
+    const emailNavigation = () => {
+      const link = takeEmailLink(new URL(location.href), (url) => history.replaceState(null, '', url));
+      if (!link) return;
+      account?.clear(); setView(null); setEmailLink(link); setMessage('');
+      setMode(link.type === 'recovery' ? 'reset' : 'login');
+    };
     addEventListener('pagehide', close);
-    return () => { active = false; removeEventListener('pagehide', close); account?.clear(); };
+    addEventListener('hashchange', emailNavigation);
+    return () => { active = false; removeEventListener('pagehide', close); removeEventListener('hashchange', emailNavigation); account?.clear(); };
   }, []);
   useEffect(() => {
     if (!view || !account) return;
@@ -57,7 +66,7 @@ function App() {
       if (!account) return;
       if (mode === 'reset' && recoveryHash) {
         try { await account.resetPassword(recoveryHash, password); }
-        finally { setRecoveryHash(null); setMode('login'); }
+        finally { setEmailLink(null); setMode('login'); }
         setMessage('Mot de passe modifié. Connectez-vous avec le nouveau mot de passe.');
       } else if (mode === 'signup') {
         const name = data.get('name');
@@ -88,7 +97,7 @@ function App() {
       const displayedMinor = billingInterval === 'year' && yearly ? yearly.unitAmountMinor / 12 : selected.unitAmountMinor;
       const savingsMinor = monthly && yearly ? monthly.unitAmountMinor * 12 - yearly.unitAmountMinor : 0;
       return <article className={`offer${plan.featured ? ' featured' : ''}`} key={plan.offerCode}>
-        {plan.featured && <p className="offer-badge">LE PLUS CHOISI</p>}
+        {plan.featured && <p className="offer-badge">POUR LES AUTEURS</p>}
         <h3>{plan.displayName}</h3><p className="offer-description">{plan.description}</p>
         <p className="price">{money(displayedMinor, selected.currency)} <small>/ mois</small></p>
         <p className="billing-detail">{free ? 'Gratuit, sans limite de durée' : billingInterval === 'year'
@@ -132,7 +141,16 @@ function App() {
     </section>
     <section className="section" id="compte"><p className="eyebrow">VOTRE ESPACE</p><h2>Mon compte senario</h2>
       <p>Compte de test uniquement. Dans le navigateur, une actualisation demande une nouvelle connexion ; aucun jeton n’est conservé dans le stockage du navigateur.</p>
-      {!view ? <form className="account-form" onSubmit={(event) => void submit(event)}>
+      {emailLink?.type === 'signup' ? <div className="account-form">
+        <h3>Confirmer votre adresse e-mail</h3><p>Validez votre inscription, puis connectez-vous avec votre mot de passe.</p>
+        <button className="download" disabled={busy || !account} onClick={() => void perform(async () => {
+          const hash = emailLink.tokenHash;
+          setEmailLink(null);
+          await account!.confirmEmail(hash);
+          setMode('login'); setMessage('Adresse confirmée. Vous pouvez vous connecter.');
+        })}>Confirmer mon adresse</button>
+        <button className="text-button" onClick={() => setEmailLink(null)}>Revenir à la connexion</button>
+      </div> : !view ? <form className="account-form" onSubmit={(event) => void submit(event)}>
         <fieldset disabled={busy || !account}><legend>{mode === 'reset' ? 'Choisir un nouveau mot de passe' : mode === 'signup' ? 'Créer un compte de test' : 'Connexion'}</legend>
           {mode !== 'reset' && <label>Adresse e-mail<input type="email" name="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required maxLength={254}/></label>}
           {mode === 'signup' && <label>Votre nom<input name="name" autoComplete="name" required maxLength={100}/></label>}
@@ -159,7 +177,8 @@ function App() {
       <details><summary>Confidentialité de cette bêta</summary><p>La connexion et les données cloud utilisent Supabase ; l’API et le canal collaboratif utilisent Cloudflare. Stripe est utilisé uniquement en mode test. Aucun outil d’analyse d’audience n’est chargé par cette page. N’y déposez pas de données sensibles pendant les essais.</p><p>Les jetons du site restent en mémoire. Les données de compte et les projets cloud, eux, sont persistants côté serveur. Cette information de bêta ne remplace pas la politique de confidentialité complète, les durées de conservation et les mentions légales à finaliser avant l’ouverture publique.</p></details>
       <p>Le support public et son adresse de contact sont en préparation. Les participants à la bêta passent par leur canal d’échange existant avec l’équipe.</p>
     </section>
-    <footer><a className="brand" href="#accueil">senario</a><span>Bêta privée · Publication publique non ouverte</span><a href="#aide">Aide et confidentialité</a></footer>
+    <InformationPages/>
+    <footer><a className="brand" href="#accueil">senario</a><span>Bêta privée · Publication publique non ouverte</span><a href="#support">Support</a><a href="#confidentialite">Confidentialité</a><a href="#conditions">Conditions</a><a href="#mentions">Mentions légales</a></footer>
   </main>;
 }
 

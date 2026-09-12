@@ -9,6 +9,10 @@ test('public test catalogue is anonymous but cannot expose provider IDs / grant 
   assert.equal(result.status, 200);
   const catalog = readPublicBetaCatalog(await result.json());
   assert.equal(catalog.offers.length, 4);
+  assert.deepEqual(catalog.plans.map((plan) => plan.displayName), ['Gratuite', 'Auteur', 'Studio']);
+  assert.deepEqual(catalog.plans.map((plan) => plan.prices.map((price) => price.billingInterval)), [['none'], ['month', 'year'], ['month', 'year']]);
+  assert.equal(catalog.plans[0].prices[0].unitAmountMinor, 0);
+  assert.ok(catalog.plans.every((plan) => plan.features.length >= 4));
   assert.equal(catalog.request_id, result.headers.get('x-request-id'));
   assert.doesNotMatch(JSON.stringify(catalog), /providerPrice|quota|entitlement|deviceLimit|@|price_test/);
   assert.equal((await runtime.worker.fetch(new Request('http://localhost/v1/me'))).status, 401);

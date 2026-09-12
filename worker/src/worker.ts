@@ -25,6 +25,7 @@ import type { CloudSyncRequest } from '../../lib/commercial/contracts-v6.ts';
 import { CLOUD_CONTENT_TYPE, ScenarioConflictError } from './cloudSync.ts';
 import type { StudioContext } from './studio.ts';
 import type { CollaborativeOperationRequest } from '../../lib/commercial/contracts-v8.ts';
+import { buildPublicPlans } from './publicCatalog.ts';
 
 class ApiError extends Error {
   constructor(
@@ -848,18 +849,20 @@ export function createCommercialWorker(
           if (request.method !== 'GET')
             throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
           const offers = await dependencies.billingRepository.listOffers();
+          const publicOffers = offers.filter((offer) => offer.testMode).map((offer) => ({
+            selectionId: offer.selectionId, offerCode: offer.offerCode,
+            displayName: offer.displayName, description: offer.description,
+            billingInterval: offer.billingInterval, currency: offer.currency,
+            unitAmountMinor: offer.unitAmountMinor, testMode: true,
+          }));
           // Deliberate projection: never expose provider IDs, accounts or rights.
           status = 200;
           return jsonResponse({
             contractVersion: '2026-09-v11',
             environment: dependencies.environment,
             testMode: true,
-            offers: offers.filter((offer) => offer.testMode).map((offer) => ({
-              selectionId: offer.selectionId, offerCode: offer.offerCode,
-              displayName: offer.displayName, description: offer.description,
-              billingInterval: offer.billingInterval, currency: offer.currency,
-              unitAmountMinor: offer.unitAmountMinor, testMode: true,
-            })),
+            offers: publicOffers,
+            plans: buildPublicPlans(publicOffers),
             request_id: requestId,
           }, status, requestId, origin, dependencies.allowedOrigins);
         }

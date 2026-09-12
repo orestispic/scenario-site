@@ -86,8 +86,15 @@ test('mutating requests are not automatically retried after an uncertain respons
 });
 test('public catalogue is display-only and rejects malformed amounts / live mode', () => {
   const offer = { selectionId: 'fixture', offerCode: 'studio', displayName: 'Studio', description: null, billingInterval: 'month', currency: 'EUR', unitAmountMinor: 1234, testMode: true };
-  const catalog = { contractVersion: '2026-09-v11', environment: 'test', testMode: true, offers: [offer], request_id: 'fixture' };
+  const free = { offerCode: 'discovery', displayName: 'Gratuite', description: 'Fixture', featured: false, features: ['Fixture'], prices: [{ selectionId: null, billingInterval: 'none', currency: 'EUR', unitAmountMinor: 0, testMode: true }] };
+  const paid = (offerCode: 'author_ai' | 'studio') => ({ offerCode, displayName: 'Fixture', description: 'Fixture', featured: false, features: ['Fixture'], prices: [
+    { selectionId: `${offerCode}-month`, billingInterval: 'month', currency: 'EUR', unitAmountMinor: 1234, testMode: true },
+    { selectionId: `${offerCode}-year`, billingInterval: 'year', currency: 'EUR', unitAmountMinor: 12_340, testMode: true },
+  ] });
+  const catalog = { contractVersion: '2026-09-v11', environment: 'test', testMode: true, offers: [offer], plans: [free, paid('author_ai'), paid('studio')], request_id: 'fixture' };
   assert.equal(readPublicBetaCatalog(catalog).offers[0].unitAmountMinor, 1234);
   assert.throws(() => readPublicBetaCatalog({ ...catalog, testMode: false }));
   assert.throws(() => readPublicBetaCatalog({ ...catalog, offers: [{ ...offer, unitAmountMinor: NaN }] }));
+  assert.throws(() => readPublicBetaCatalog({ ...catalog, plans: [free, paid('author_ai'), paid('author_ai')] }));
+  assert.throws(() => readPublicBetaCatalog({ ...catalog, plans: [{ ...free, prices: [{ ...free.prices[0], unitAmountMinor: 1 }] }, paid('author_ai'), paid('studio')] }));
 });

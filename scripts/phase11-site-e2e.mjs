@@ -7,7 +7,7 @@ import { createLocalRuntime } from '../worker/src/localRuntime.ts';
 
 const hosted = process.argv.includes('--hosted');
 const origin = process.env.SCENARIO_TEST_SITE_URL ?? 'http://127.0.0.1:4173';
-if (!['http://127.0.0.1:4173', 'https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app'].includes(origin))
+if (!['http://127.0.0.1:4173', 'http://127.0.0.1:4174', 'https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app'].includes(origin))
   throw new Error('Refusing an unexpected site origin');
 const api = 'https://scenario-commercial-api-preproduction.ore-picard.workers.dev';
 const auth = 'https://zblnsdyaoljnezxdidtx.supabase.co';
@@ -57,7 +57,14 @@ try {
     console.log('Catalogue readiness:', await page.locator('.notice').allTextContents());
     throw new Error('Catalogue unavailable before synthetic login');
   });
-  assert.equal(await page.locator('#offres .offer').count(), 4);
+  assert.equal(await page.locator('#offres .offer').count(), 3);
+  assert.deepEqual(await page.locator('#offres .offer h3').allTextContents(), ['Gratuite', 'Auteur', 'Studio']);
+  assert.equal(await page.getByRole('switch', { name: 'Afficher les prix mensuels' }).first().getAttribute('aria-checked'), 'false');
+  assert.equal(await page.locator('#offres .offer').nth(1).getByText(/facturés par an/).count(), 1);
+  await page.getByRole('switch', { name: 'Afficher les prix mensuels' }).first().click();
+  assert.equal(await page.getByRole('switch', { name: 'Afficher les prix annuels' }).first().getAttribute('aria-checked'), 'true');
+  assert.equal(await page.locator('#offres .offer').nth(1).getByText('Facturation mensuelle').count(), 1);
+  await page.getByRole('switch', { name: 'Afficher les prix annuels' }).first().click();
   assert.equal(await page.locator('a[href*="releases/latest/download"]').count(), 0);
   assert.equal(await page.locator('script[src*="analytics"]').count(), 0);
   let email = 'synthetic@example.invalid', password = 'synthetic-password';
@@ -83,7 +90,7 @@ try {
     await page.getByLabel('Adresse e-mail', { exact: true }).fill(email);
     await page.getByLabel('Mot de passe', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Se connecter', exact: true }).click();
-    await page.getByRole('button', { name: 'Essayer cette offre en mode test' }).first().click();
+    await page.getByRole('button', { name: 'Essayer Auteur en mode test' }).click();
     await page.getByRole('heading', { name: 'Checkout simulé, aucun paiement' }).waitFor({ timeout: 10_000 }).catch(async () => {
       console.log('Checkout fixture attempts:', checkout, 'UI status:', await page.locator('#compte output').allTextContents());
       throw new Error('Simulated Checkout navigation failed');

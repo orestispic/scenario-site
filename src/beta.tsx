@@ -2,19 +2,20 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserAccount, takeRecoveryHash, validateBrowserConfig, type BrowserAccountConfig } from '../lib/commercial/browser-account';
-import type { BillingOfferView } from '../lib/commercial/contracts-v3';
+import type { PublicPlanView } from '../lib/commercial/contracts-v11';
 import './site.css';
 
 declare const __SENARIO_PUBLIC_CONFIG__: BrowserAccountConfig;
 let initialRecovery = takeRecoveryHash(new URL(location.href), (url) => history.replaceState(null, '', url));
 const account = validateBrowserConfig(__SENARIO_PUBLIC_CONFIG__) ? new BrowserAccount(__SENARIO_PUBLIC_CONFIG__) : null;
 type AccountView = Awaited<ReturnType<BrowserAccount['account']>>;
-const money = (offer: BillingOfferView) => new Intl.NumberFormat('fr-FR', {
-  style: 'currency', currency: offer.currency,
-}).format(offer.unitAmountMinor / 100);
+const money = (unitAmountMinor: number, currency: string) => new Intl.NumberFormat('fr-FR', {
+  style: 'currency', currency,
+}).format(unitAmountMinor / 100);
 
 function App() {
-  const [offers, setOffers] = useState<BillingOfferView[]>([]);
+  const [plans, setPlans] = useState<PublicPlanView[]>([]);
+  const [billingInterval, setBillingInterval] = useState<'year' | 'month'>('year');
   const [catalogError, setCatalogError] = useState('');
   const [view, setView] = useState<AccountView | null>(null);
   const [recoveryHash, setRecoveryHash] = useState(() => { const value = initialRecovery; initialRecovery = null; return value; });
@@ -24,7 +25,7 @@ function App() {
   const [email, setEmail] = useState('');
   useEffect(() => {
     let active = true;
-    if (account) void account.catalog().then((catalog) => { if (active) setOffers(catalog.offers); })
+    if (account) void account.catalog().then((catalog) => { if (active) setPlans(catalog.plans); })
       .catch(() => { if (active) setCatalogError('Les offres sont temporairement indisponibles. Réessayez plus tard.'); });
     const close = () => { account?.clear(); setView(null); setRecoveryHash(null); setMode('login'); };
     addEventListener('pagehide', close);
@@ -68,15 +69,41 @@ function App() {
       }
     });
   }
-  function offerCards(items: BillingOfferView[], signedIn: boolean) {
-    return items.map((offer) => <article className="offer" key={offer.selectionId}>
-      <p className="eyebrow">{offer.billingInterval === 'month' ? 'MENSUEL' : 'ANNUEL'}</p>
-      <h3>{offer.displayName}</h3><p>{offer.description}</p>
-      <p className="price">{money(offer)} <small>/ {offer.billingInterval === 'month' ? 'mois' : 'an'}</small></p>
-      {signedIn ? <button className="download" disabled={busy || !offer.testMode} onClick={() => void perform(async () => {
-        location.assign(await account!.checkout(offer.selectionId, `${location.origin}${location.pathname}#compte`));
-      })}>Essayer cette offre en mode test</button> : <a className="secondary" href="#compte">Se connecter pour essayer</a>}
-    </article>);
+  function billingSwitch() {
+    const monthly = billingInterval === 'month';
+    return <div className="billing-control" aria-label="Période de facturation">
+      <span className={!monthly ? 'selected' : ''}>Annuel <small>économisez</small></span>
+      <button type="button" className="billing-switch" role="switch" aria-checked={monthly}
+        aria-label={monthly ? 'Afficher les prix annuels' : 'Afficher les prix mensuels'}
+        onClick={() => setBillingInterval(monthly ? 'year' : 'month')}><i/></button>
+      <span className={monthly ? 'selected' : ''}>Mensuel</span>
+    </div>;
+  }
+  function offerCards(items: PublicPlanView[], signedIn: boolean) {
+    return items.map((plan) => {
+      const free = plan.offerCode === 'discovery';
+      const selected = plan.prices.find((price) => price.billingInterval === (free ? 'none' : billingInterval))!;
+      const monthly = plan.prices.find((price) => price.billingInterval === 'month');
+      const yearly = plan.prices.find((price) => price.billingInterval === 'year');
+      const displayedMinor = billingInterval === 'year' && yearly ? yearly.unitAmountMinor / 12 : selected.unitAmountMinor;
+      const savingsMinor = monthly && yearly ? monthly.unitAmountMinor * 12 - yearly.unitAmountMinor : 0;
+      return <article className={`offer${plan.featured ? ' featured' : ''}`} key={plan.offerCode}>
+        {plan.featured && <p className="offer-badge">LE PLUS CHOISI</p>}
+        <h3>{plan.displayName}</h3><p className="offer-description">{plan.description}</p>
+        <p className="price">{money(displayedMinor, selected.currency)} <small>/ mois</small></p>
+        <p className="billing-detail">{free ? 'Gratuit, sans limite de durée' : billingInterval === 'year'
+          ? `${money(yearly!.unitAmountMinor, yearly!.currency)} facturés par an`
+          : 'Facturation mensuelle'}</p>
+        {!free && billingInterval === 'year' && savingsMinor > 0 && <p className="saving">Vous économisez {money(savingsMinor, selected.currency)} par an</p>}
+        <ul className="offer-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+        {signedIn ? free
+          ? <span className="included">Offre gratuite incluse</span>
+          : <button className="download" disabled={busy || !selected.testMode} onClick={() => void perform(async () => {
+            location.assign(await account!.checkout(selected.selectionId!, `${location.origin}${location.pathname}#compte`));
+          })}>Essayer {plan.displayName} en mode test</button>
+          : <a className={plan.featured ? 'download' : 'secondary'} href="#compte">{free ? 'Commencer gratuitement' : `Essayer ${plan.displayName}`}</a>}
+      </article>;
+    });
   }
   return <main>
     <header className="topbar"><a className="brand" href="#accueil" aria-label="senario, accueil"><img src="/scenario-logo.png" alt=""/><span>senario</span></a>
@@ -94,7 +121,8 @@ function App() {
     </section>
     <section className="section" id="offres"><p className="eyebrow">CHOISISSEZ VOTRE FAÇON D’ÉCRIRE</p><h2>Les offres de la bêta</h2>
       <p>Montants affichés par le serveur de test. Aucun abonnement réel n’est vendu sur cette version.</p>
-      <div className="offer-grid">{offerCards(offers, false)}</div>
+      {billingSwitch()}
+      <div className="offer-grid">{offerCards(plans, false)}</div>
       {!account && <p className="notice">Le catalogue et la connexion seront disponibles lorsque ce site sera relié à son environnement de test.</p>}
       {catalogError && <output className="notice">{catalogError}</output>}
     </section>
@@ -120,7 +148,8 @@ function App() {
           <div className="account-actions"><button className="secondary" disabled={busy} onClick={() => void perform(async () => setView(await account!.account()))}>Actualiser mon compte</button>
             <button className="secondary" disabled={busy} onClick={() => void perform(async () => location.assign(await account!.portal(`${location.origin}${location.pathname}#compte`)))}>Gérer l’abonnement test</button>
             <button className="secondary" disabled={busy} onClick={() => void perform(async () => { setView(null); await account!.signOut(); setMessage('Vous êtes déconnecté.'); })}>Se déconnecter</button></div>
-          <div className="offer-grid">{offerCards(view.billing.offers, true)}</div></div>}
+          {billingSwitch()}
+          <div className="offer-grid">{offerCards(plans, true)}</div></div>}
       <output className="notice" aria-live="polite">{message || (!account ? 'Connexion indisponible : configuration de test manquante.' : 'Utilisez votre compte de test existant.')}</output>
     </section>
     <section className="section help" id="aide"><h2>Besoin d’un repère ?</h2>

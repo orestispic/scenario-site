@@ -25,6 +25,13 @@ Le logo fourni est réutilisé ; aucune refonte des identifiants ou des fichiers
   fournies par le dépôt serveur. Projection des champs publics seulement,
   aucun identifiant Stripe fournisseur, compte, quota ou droit. Ce catalogue
   n'accorde aucune autorisation. CORS, limiteur distribué et request_id conservés.
+- Le catalogue regroupe désormais les sélections en trois plans d'affichage
+  serveur : **Gratuite**, **Auteur** et **Studio**. Les textes de fonctionnalités
+  sont des indications commerciales, jamais une autorisation. Le client démarre
+  sur l'annuel, calcule l'équivalent mensuel à partir du montant annuel servi et
+  l'économie par rapport à douze mensualités ; il ne contient aucun prix.
+  `offers` reste présent pour les consommateurs v11 existants, tandis que `plans`
+  porte cette nouvelle présentation sans modifier les contrats v1 à v10.
 - Vite expose uniquement trois champs publics explicitement sélectionnés.
   Sans configuration le compte et le catalogue restent fermés, pas de faux serveur
   implicitement activé dans un build public. `.env.phase9.local` est ignoré.

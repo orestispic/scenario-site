@@ -90,3 +90,25 @@ de mise à jour simulé ne suffit pas à fermer le gate updater.
 Sources légales et techniques dans le dossier opératoire. La publication publique
 et les téléchargements restent fermés. Prévisualisation mise à jour : résultat et
 URL consignés en addendum après déploiement. Aucun push.
+
+## Addendum — aperçu privé et contrôles réels
+
+- App : commit local `55fa3ff`. Site : `ecb041a`, puis CORS `bd8e3e9`.
+- Vercel Preview `dpl_7YXPwhv4jyTWuRShEyYosyn84gbG`, statut READY :
+  https://scenario-site-5w3cp0w67-orepicard-4993s-projects.vercel.app
+- Worker préproduction `fe8b524b-58c8-4693-b0e1-4ebdc076c36c` : seul changement
+  serveur dans ce lot, remplacement de l'origine exacte du site dans la CORS.
+- `npm.cmd exec wrangler -- deploy --dry-run --config wrangler.preproduction.toml --outdir outputs/phase12-worker` réussi.
+- `npx.cmd --yes vercel@latest deploy --yes` et
+  `npm.cmd exec wrangler -- deploy --config wrangler.preproduction.toml` réussis.
+- Lecture CLI authentifiée `npx.cmd --yes vercel@latest curl https://scenario-site-5w3cp0w67-orepicard-4993s-projects.vercel.app --silent` :
+  titre senario, noindex et bundle `index-8buFe1Pj.js` attendu.
+- `npm.cmd run phase11:health` : config et catalogue 200, staging/test confirmés.
+  Lecture réelle du catalogue avec Origin exact : 200, CORS égal, trois plans.
+- Ces lectures réelles ne sont pas une réception SMTP, une restauration de base,
+  un test d'installation Windows ou une validation de paiement live. Le parcours
+  complet de confirmation reste une validation E2E locale interceptée.
+
+Site de production, domaine, DNS et SMTP non modifiés. Les fichiers/contrats
+historiques sont conservés. La phase 12 prépare la sortie mais ses critères
+externes ne sont pas tous clos.

@@ -23,6 +23,8 @@ Les pages du site sont des informations provisoires de bêta, pas des CGV valid�
    modèles Confirm signup et Reset password depuis `release/emails/`. Le lien
    comporte TokenHash dans le fragment et non dans la requête. Désactiver le suivi
    des clics ; vérifier qu'aucun fournisseur ne réécrit le lien de manière sensible.
+   En préproduction, chaque URL Vercel temporaire doit être explicitement ajoutée
+   aux origines du Worker ; `senario.app` fournit l'origine stable prévue ensuite.
 5. Avec deux boîtes contrôlées : inscription, confirmation explicite, double clic,
    lien consommé/expiré, récupération, mauvais destinataire, changement de mot de
    passe puis connexion avec le nouveau. Ne pas comptabiliser les tests interceptés

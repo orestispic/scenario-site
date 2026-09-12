@@ -7,7 +7,9 @@ import { createLocalRuntime } from '../worker/src/localRuntime.ts';
 
 const hosted = process.argv.includes('--hosted');
 const origin = process.env.SCENARIO_TEST_SITE_URL ?? 'http://127.0.0.1:4173';
-if (!['http://127.0.0.1:4173', 'http://127.0.0.1:4174', 'https://scenario-site-5w3cp0w67-orepicard-4993s-projects.vercel.app'].includes(origin))
+if (!['http://127.0.0.1:4173', 'http://127.0.0.1:4174',
+  'https://scenario-site-5w3cp0w67-orepicard-4993s-projects.vercel.app',
+  'https://scenario-site-5f9pewvbh-orepicard-4993s-projects.vercel.app'].includes(origin))
   throw new Error('Refusing an unexpected site origin');
 const api = 'https://scenario-commercial-api-preproduction.ore-picard.workers.dev';
 const auth = 'https://zblnsdyaoljnezxdidtx.supabase.co';

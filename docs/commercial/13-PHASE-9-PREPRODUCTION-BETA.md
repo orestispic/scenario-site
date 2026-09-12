@@ -4,6 +4,21 @@
 
 La phase 9 transforme les validations locales des phases 0 à 8 en validation intégrée sur des ressources de test isolées. Elle n'ajoute aucun prix, quota, droit ou comportement décidé par le client. Elle ne modifie aucun contrat public v1 à v8 et n'autorise ni production, ni paiement réel, ni appel IA payant implicite.
 
+## Validation Stripe Checkout test
+
+Le parcours hébergé utilise exclusivement le catalogue Stripe test sélectionné
+côté serveur. Les scripts `phase9:stripe:checkout` et
+`phase9:stripe:checkout:validate` créent une session Studio mensuelle pour le
+compte synthétique owner, ferment immédiatement sa session d'API, puis vérifient
+le Checkout complété, les webhooks signés, l'abonnement, la facture et le
+snapshot de droits sans afficher de jeton ni de secret.
+
+La migration append-only
+`20260921000000_stripe_webhook_order_reconciliation.sql` traite explicitement
+l'absence de garantie d'ordre entre `invoice.*` et
+`customer.subscription.*`. Elle réconcilie uniquement la projection de facture,
+de façon idempotente, et ne modifie jamais le journal brut signé des webhooks.
+
 Le lancement local est fonctionnel : `npm.cmd run phase9:preflight` vérifie la préparation Supabase, Stripe test, signature hors ligne, secrets techniques, origines privées et canal Studio. Le contrôle ne contacte aucun fournisseur, ne déploie rien et n'affiche jamais les valeurs. Son code de sortie est `2` tant qu'une dépendance externe manque.
 
 ## Ordre de validation

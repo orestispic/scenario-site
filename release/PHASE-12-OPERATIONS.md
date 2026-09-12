@@ -11,11 +11,12 @@ Les pages du site sont des informations provisoires de bêta, pas des CGV valid�
 
 ## 1. Messagerie et demandes des utilisateurs
 
-1. Choisir une boîte professionnelle recevant réellement support@senario.app.
-   Le domaine Vercel seul ne crée pas de boîte. Conserver les MX existants jusqu'à
-   validation de la nouvelle boîte ; utiliser les valeurs exactes du fournisseur.
-2. Installer ses enregistrements MX, SPF, DKIM et DMARC. Ne pas publier deux SPF.
-   Commencer DMARC en observation, puis renforcer après vérification des envois.
+1. `support@senario.app` est créée chez Zoho Mail et sa réception ainsi que son
+   émission ont été vérifiées manuellement le 13 septembre 2026 avec une seconde
+   boîte contrôlée.
+2. MX, SPF et DKIM Zoho Europe sont validés. DMARC est publié en observation
+   (`p=none`) avec rapports agrégés vers la boîte support ; le renforcer seulement
+   après examen des rapports et inventaire de tous les expéditeurs légitimes.
 3. Séparer la réception du support et le SMTP transactionnel si nécessaire.
    Enregistrer le secret SMTP uniquement dans Supabase Auth, jamais dans Vite.
 4. Supabase Authentication : définir une Site URL détenue et validée, puis les

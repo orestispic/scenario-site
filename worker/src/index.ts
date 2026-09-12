@@ -12,7 +12,10 @@ import {
   StripeWebhookVerifier,
   UnavailableStripeWebhookVerifier,
 } from './stripeWebhook.ts';
-import { OpenAiResponsesProvider, UnavailableAiProvider } from './aiProvider.ts';
+import {
+  OpenAiResponsesProvider,
+  UnavailableAiProvider,
+} from './aiProvider.ts';
 import { SupabaseAiQuotaRepository } from './aiQuota.ts';
 import {
   SupabaseCloudScenarioRepository,
@@ -20,6 +23,10 @@ import {
 } from './cloudSync.ts';
 import { SupabaseStudioRepository } from './studio.ts';
 import { CloudflareRealtimeTransport } from './realtimeCollaboration.ts';
+import {
+  ReconciledRealtimeTransport,
+  SupabaseCollaborationLedger,
+} from './collaborationLedger.ts';
 import { normalizeHostedSupabaseUrl } from './supabaseAdmin.ts';
 
 function required(
@@ -71,8 +78,8 @@ const productionWorker = {
       openAiApiKey && openAiShortModel && openAiPdfModel,
     );
     if (
-      [openAiApiKey, openAiShortModel, openAiPdfModel].filter(Boolean).length !==
-      (aiConfigured ? 3 : 0)
+      [openAiApiKey, openAiShortModel, openAiPdfModel].filter(Boolean)
+        .length !== (aiConfigured ? 3 : 0)
     )
       throw new Error('Incomplete AI test configuration.');
     if (environment.SCENARIO_ENVIRONMENT === 'production') {
@@ -104,8 +111,9 @@ const productionWorker = {
       let realtimeTransport;
       if (environment.STUDIO_REALTIME_CHANNEL) {
         required(environment, 'STUDIO_TICKET_PEPPER');
-        realtimeTransport = new CloudflareRealtimeTransport(
-          environment.STUDIO_REALTIME_CHANNEL,
+        realtimeTransport = new ReconciledRealtimeTransport(
+          new CloudflareRealtimeTransport(environment.STUDIO_REALTIME_CHANNEL),
+          new SupabaseCollaborationLedger(runtimeEnvironment),
         );
       }
       runtime = createCommercialWorker({
@@ -182,7 +190,9 @@ const productionWorker = {
             4_194_304,
           ),
         },
-        cloudRepository: new SupabaseCloudScenarioRepository(runtimeEnvironment),
+        cloudRepository: new SupabaseCloudScenarioRepository(
+          runtimeEnvironment,
+        ),
         scenarioStorage: new SupabaseScenarioObjectStorage(
           runtimeEnvironment,
           environment.CLOUD_STORAGE_BUCKET ?? 'scenario-documents',

@@ -47,6 +47,27 @@ function clientHeaders(session, fingerprint, clientVersion, idempotencyKey) {
   };
 }
 
+function adminHeaders(secretKey) {
+  const headers = {
+    Accept: 'application/json',
+    apikey: secretKey,
+  };
+  if (!secretKey.startsWith('sb_secret_'))
+    headers.Authorization = `Bearer ${secretKey}`;
+  return headers;
+}
+
+async function ledgerRows(supabaseUrl, secretKey, table, parameters) {
+  const query = new URLSearchParams(parameters);
+  const response = await fetch(`${supabaseUrl}/rest/v1/${table}?${query}`, {
+    headers: adminHeaders(secretKey),
+  });
+  const payload = await readResponse(response);
+  if (!response.ok || !Array.isArray(payload))
+    throw new Error(`Hosted ${table} ledger verification failed.`);
+  return payload;
+}
+
 async function readResponse(response) {
   const text = await response.text();
   if (!text) return null;
@@ -240,6 +261,10 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
   if (supabaseUrl !== `https://${projectRef}.supabase.co`)
     throw new Error('Refusing a Supabase project mismatch.');
   const anonKey = required(environment, 'SUPABASE_ANON_KEY');
+  const secretKey =
+    environment.SUPABASE_SECRET_KEY?.trim() ||
+    environment.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!secretKey) throw new Error('A Supabase server key is required.');
   const studioId = required(fixture, 'PHASE9_STUDIO_ID');
   const scenarioId = required(fixture, 'PHASE9_SCENARIO_ID');
   const clientVersion = await serverMinimumVersion(apiUrl);
@@ -411,6 +436,38 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
     )
       throw new Error('Hosted cursor catch-up is not monotone or complete.');
 
+    const persistedOperations = await ledgerRows(
+      supabaseUrl,
+      secretKey,
+      'studio_collaboration_operations',
+      {
+        studio_id: `eq.${studioId}`,
+        operation_id: `eq.${operationId}`,
+        select: 'operation_id,checksum,cursor',
+      },
+    );
+    if (
+      persistedOperations.length !== 1 ||
+      persistedOperations[0]?.checksum !== operation.checksum ||
+      !Number.isSafeInteger(Number(persistedOperations[0]?.cursor))
+    )
+      throw new Error(
+        'Hosted operation is not unique in the append-only ledger.',
+      );
+    const acknowledgements = await ledgerRows(
+      supabaseUrl,
+      secretKey,
+      'studio_collaboration_acknowledgements',
+      {
+        studio_id: `eq.${studioId}`,
+        cursor: `gte.${persistedOperations[0].cursor}`,
+        select: 'cursor',
+        limit: '1',
+      },
+    );
+    if (acknowledgements.length !== 1)
+      throw new Error('Hosted cursor acknowledgement was not persisted.');
+
     const ownerConnectionId = inputs.owner.connection.connectionId;
     await disconnect(inputs.owner, ownerConnectionId);
     connections.splice(
@@ -427,6 +484,7 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
       initialOperationStatus: applied.payload.status,
       presenceRoles: roles.size,
       polledEvents: events.length,
+      ledgerOperations: persistedOperations.length,
       resumedCursor: resumed.cursor,
     };
   } finally {
@@ -446,6 +504,9 @@ async function run() {
   console.log(`three-role presence verified (${result.presenceRoles})`);
   console.log(`operation ${result.initialOperationStatus}; retry replayed`);
   console.log(`monotone catch-up verified (${result.polledEvents} event(s))`);
+  console.log(
+    `append-only Supabase ledger verified (${result.ledgerOperations} operation)`,
+  );
   console.log(
     `disconnect and cursor resume verified (${result.resumedCursor})`,
   );

@@ -56,3 +56,14 @@ test('the current Stripe API migration preserves raw events and reconciles item 
   assert.match(sql, /grant execute on function[\s\S]*to service_role/);
   assert.doesNotMatch(sql, /sk_(?:test|live)_|whsec_|['"]price_[A-Za-z0-9]/);
 });
+
+test('the hosted catalogue validation logs out and never prints credentials', async () => {
+  const source = await readFile(
+    new URL('../scripts/phase9-validate-stripe-catalog.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /\/v2\/billing/);
+  assert.match(source, /auth\/v1\/logout\?scope=local/);
+  assert.match(source, /payload\.offers\.length !== EXPECTED\.size/);
+  assert.doesNotMatch(source, /console\.log\([^)]*(?:password|access_token)/);
+});

@@ -32,7 +32,8 @@ async function call(path, role, body, key = randomUUID(), expected = [200,201,20
 try {
   const config = await (await fetch(`${apiUrl}/v1/config`,{headers:{Origin:origin},signal:AbortSignal.timeout(15000)})).json();
   assert.equal(config.environment,'staging');
-  version = config.compatibility.find((v)=>v.platform==='windows').minimumSupportedVersion;
+  version = config.compatibility.find((v)=>v.platform==='windows')?.minimumSupportedVersion ?? config.compatibility[0]?.minimumSupportedVersion;
+  assert.match(version ?? '', /^\d+\.\d+\.\d+$/);
   for(const role of ['owner','editor','viewer']) {
     const prefix=`PHASE9_${role.toUpperCase()}`;
     assert.equal(accounts[`${prefix}_EMAIL`],`phase9-${role}-${projectRef}@example.com`);

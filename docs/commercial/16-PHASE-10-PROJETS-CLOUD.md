@@ -96,7 +96,7 @@ elle n'est pas une preuve de capacité sous charge de production.
 Exécuté localement : 120 tests API/contrats (dont concurrence, sessions, Stripe
 simulé, IA simulée, quotas, versions, RLS statique), typecheck, lint ciblé, build
 site, scans de secrets serveur/client, compilation Worker à blanc (187,30 KiB).
-Application : 105 tests, build/typecheck, Edge isolé, menus, 3 tests Rust passés
+Application : 107 tests, build/typecheck, Edge isolé, menus, 3 tests Rust passés
 et 1 test de coffre natif explicitement ignoré.
 
 Exécuté réellement sur PostgreSQL de préproduction AVANT application : transaction
@@ -128,7 +128,48 @@ Ne jamais exécuter la fixture seule : elle suppose une transaction annulée.
 Le script `phase10-validate-hosted-projects.mjs --execute` est limité en dur à la
 préproduction `zblnsdyaoljnezxdidtx` et au Worker de préproduction. Il utilise les
 3 comptes existants et place ses seuls projets synthétiques dans la corbeille.
-La section suivante consignera la mise à jour et les validations hébergées.
+Les mises à jour et validations hébergées sont consignées ci-dessous.
+
+## Mise à jour et validations réelles exécutées
+
+Commit code déployé : `fe2b5a3`. Migration `20260923000000_cloud_projects.sql`
+appliquée uniquement à `zblnsdyaoljnezxdidtx` par `migration up --linked`.
+Les 16 versions locales/distantes correspondent. `db lint --linked --level error`
+ne renvoie aucune erreur. Worker `scenario-commercial-api-preproduction`, version
+Cloudflare `dbed8419-d18e-451b-8e28-09c5b4a02648` (187,30 KiB, démarrage 5 ms).
+
+```powershell
+.\node_modules\.bin\supabase.cmd migration up --linked
+.\node_modules\.bin\supabase.cmd db lint --linked --level error
+.\node_modules\.bin\supabase.cmd migration list --linked
+.\node_modules\.bin\wrangler.cmd deploy --config wrangler.preproduction.toml
+node scripts/phase10-validate-hosted-projects.mjs --execute
+```
+
+Le script réel a réussi : 2 projets privés, 2 périmètres de partage distincts,
+3 comptes synthétiques existants, invitations reçues/acceptées sans token,
+destinataire tiers refusé, idempotence, rôle viewer, élévation refusée, retrait
+d'accès, 2 opérations concurrentes Owner/Editor avec même séquence locale mais
+IDs/auteurs distincts, poll vérifiant le journal, replay dédupliqué. Les seuls
+projets créés ont été placés dans la corbeille, pas supprimés matériellement.
+Leurs objets privés, versions et événements d'audit restent conservés. Les
+connexions et sessions du test ont été fermées, pas celles des utilisateurs.
+
+Dans le worktree application : `node scripts/realtime-soak.mjs 60` a réussi avec
+3 comptes simultanés, aucune erreur/reconnexion, 15 polls chacun, documents
+reconstruits identiques. `node scripts/realtime-owner-editor-e2e.mjs` a réussi sur
+le Studio historique : ajouts simultanés de blocs vides réservés aux tests,
+convergence puis nettoyage visible par tombstones. L'audit est conservé.
+
+Deux corrections du harnais de validation ont été nécessaires : lecture du
+minimum client historique sans champ platform, et attente du rattrapage paginé
+avant de vérifier online. Les premiers essais ont échoué puis les tests corrigés
+ont réussi. Les restrictions réseau/esbuild du bac à sable ont nécessité des
+relances avec permission d'exécution ; aucune protection produit n'a été retirée.
+
+Le commit de finalisation ne change pas le Worker déployé, uniquement le script
+de test et cette documentation. Aucun `supabase db push`, push Git, paiement,
+notification ou déploiement en production n'a été effectué.
 
 Limites restant hors preuve : charge importante, soak long, suspension/veille
 multiappareil, panne réelle injectée de Cloudflare/SQL, restauration administrative

@@ -4,6 +4,7 @@ import type {
   AiOperation,
   AiPdfImportResult,
 } from '../../lib/commercial/contracts-v5.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 export type AiProviderInput =
   | { operation: 'short_action'; request: AiActionRequest }
@@ -178,7 +179,8 @@ export class OpenAiResponsesProvider implements AiProvider {
     );
     const format = responseFormat(input);
     try {
-      const response = await this.fetcher(
+      const response = await detachedFetch(
+        this.fetcher,
         'https://api.openai.com/v1/responses',
         {
           method: 'POST',

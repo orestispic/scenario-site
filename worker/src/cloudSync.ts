@@ -9,6 +9,7 @@ import type { LocalTestRepository } from './localTestRepository.ts';
 import type { CommercialRepository, WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 export const CLOUD_CONTENT_TYPE = 'application/vnd.scenario+json' as const;
 export const CLOUD_MAX_BYTES = 4_194_304;
@@ -728,7 +729,8 @@ export class SupabaseCloudScenarioRepository implements CloudScenarioRepository 
       localParentVersionId: string | null;
     },
   ): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`,
       {
         method: 'POST',
@@ -790,7 +792,8 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
       input.bytes.byteOffset,
       input.bytes.byteOffset + input.bytes.byteLength,
     ) as ArrayBuffer;
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/${this.bucket}/${input.key}`,
       {
         method: 'POST',
@@ -813,7 +816,8 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
   async temporaryDownload(
     input: Parameters<ScenarioObjectStorage['temporaryDownload']>[0],
   ): Promise<TemporaryObjectGrant> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/sign/${this.bucket}/${input.key}`,
       {
         method: 'POST',

@@ -17,6 +17,7 @@ import type {
 import type { WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 export interface StudioContext extends CloudAccessContext {
   emailHash: string;
@@ -805,7 +806,8 @@ export class SupabaseStudioRepository implements StudioRepository {
     };
   }
   private async rpc<T>(name: string, body: unknown): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`,
       {
         method: 'POST',

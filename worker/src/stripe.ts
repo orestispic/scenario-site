@@ -1,3 +1,5 @@
+import { detachedFetch } from './detachedFetch.ts';
+
 export interface StripeCheckoutInput {
   priceReference: string;
   profileId: string;
@@ -104,7 +106,7 @@ export class StripeRestGateway implements StripeGateway {
     idempotencyKey: string,
     values: Record<string, string>,
   ): Promise<Response> {
-    const response = await this.fetcher(`https://api.stripe.com${path}`, {
+    const response = await detachedFetch(this.fetcher, `https://api.stripe.com${path}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.secretKey}`,

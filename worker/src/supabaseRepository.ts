@@ -11,6 +11,7 @@ import type {
   WorkerEnvironment,
 } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 type DatabaseProfile = {
   id: string;
@@ -176,7 +177,8 @@ export class SupabaseRestRepository implements CommercialRepository {
   }
 
   async logout(accessToken: string): Promise<void> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/auth/v1/logout`,
       {
         method: 'POST',
@@ -217,8 +219,8 @@ export class SupabaseRestRepository implements CommercialRepository {
     const endpoint = path.split('?')[0] ?? 'unknown';
     let response: Response;
     try {
-      const fetcher = this.fetcher;
-      response = await fetcher(
+      response = await detachedFetch(
+        this.fetcher,
         `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
         { headers: this.serviceHeaders() },
       );
@@ -264,7 +266,8 @@ export class SupabaseRestRepository implements CommercialRepository {
     body: unknown,
     method = 'POST',
   ): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
       {
         method,

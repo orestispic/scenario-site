@@ -1,5 +1,6 @@
 import type { AuthenticatedIdentity, TokenVerifier } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 export class AuthenticationError extends Error {
   constructor(message = 'Authentification requise.') {
@@ -133,9 +134,8 @@ export class SupabaseJwksTokenVerifier implements TokenVerifier {
     if (this.fetching) return this.fetching;
     this.fetching = (async () => {
       try {
-        // Cloudflare's native fetch must not be invoked as an object method.
-        const fetcher = this.fetcher;
-        const response = await fetcher(
+        const response = await detachedFetch(
+          this.fetcher,
           `${this.supabaseUrl.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`,
           {
             headers: { Accept: 'application/json' },

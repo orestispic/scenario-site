@@ -5,6 +5,7 @@ import type {
 import type { WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
+import { detachedFetch } from './detachedFetch.ts';
 
 export interface AiReservation {
   id: string;
@@ -113,7 +114,8 @@ export class SupabaseAiQuotaRepository implements AiQuotaRepository {
   }
 
   private async rpc<T>(path: string, body: unknown): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
       {
         method: 'POST',

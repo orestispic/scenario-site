@@ -6,6 +6,7 @@ import type {
 import type { EntitlementSnapshot } from '../../lib/commercial/contracts.ts';
 import type { VerifiedStripeEvent } from './stripeWebhook.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
+import { detachedFetch } from './detachedFetch.ts';
 import type { ActivateDeviceInput, WorkerEnvironment } from './types.ts';
 
 export interface CheckoutSelection extends BillingOfferView {
@@ -182,7 +183,8 @@ export class SupabaseBillingRepository implements BillingRepository {
     };
   }
   private async read<T>(path: string): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
       { headers: this.headers() },
     );
@@ -191,7 +193,8 @@ export class SupabaseBillingRepository implements BillingRepository {
     return response.json() as Promise<T>;
   }
   private async write<T = unknown>(path: string, body: unknown): Promise<T> {
-    const response = await this.fetcher(
+    const response = await detachedFetch(
+      this.fetcher,
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
       {
         method: 'POST',

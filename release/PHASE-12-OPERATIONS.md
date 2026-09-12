@@ -143,7 +143,9 @@ signature et restauration sont encore attendues. Le certificat Authenticode réd
 les avertissements de provenance ; il n'est pas une obligation universelle pour
 exécuter Windows, mais fait partie du critère de distribution retenu pour senario.
 
-Après preuves et revue : connecter senario.app, vérifier HTTPS/CORS/retours Auth et
-Stripe, réception e-mails, liens support, installation/mise à jour, sauvegarde et
-alerte. Le passage Stripe live et la publication restent des étapes distinctes.
-Ne pas enlever noindex ni ouvrir de téléchargement tant que les preuves manquent.
+La bêta web est publiée sur `https://senario.app` depuis le 13 septembre 2026.
+Vérifier après chaque nouvelle version HTTPS/CORS/retours Auth et Stripe test,
+réception e-mails et liens support. Installation/mise à jour Windows, sauvegarde et
+alerte restent à fermer avant la sortie générale. Le passage Stripe live et la
+publication commerciale finale restent des étapes distinctes. Ne pas enlever
+`noindex` ni ouvrir de téléchargement tant que ces preuves manquent.

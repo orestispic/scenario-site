@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { publicationBlockers } from '../scripts/phase11-readiness.mjs';
 test('publication remains blocked; absence or string truthy values cannot unlock a gate', () => {
   const plan = JSON.parse(readFileSync(new URL('../release/publication-plan.json', import.meta.url), 'utf8'));
-  assert.equal(publicationBlockers(plan).length, 10);
+  assert.equal(publicationBlockers(plan).length, 7);
   assert.ok(publicationBlockers({ schemaVersion: 1, brand: 'senario', publicationAuthorized: 'true' }).length > 0);
   assert.ok(publicationBlockers({}).length > 0);
 });

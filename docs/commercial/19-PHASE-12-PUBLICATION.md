@@ -112,3 +112,46 @@ URL consignés en addendum après déploiement. Aucun push.
 Site de production, domaine, DNS et SMTP non modifiés. Les fichiers/contrats
 historiques sont conservés. La phase 12 prépare la sortie mais ses critères
 externes ne sont pas tous clos.
+
+## Addendum — publication de la bêta sur senario.app
+
+Le 13 septembre 2026, l'utilisateur a explicitement demandé la publication de la
+bêta. Le commit site `5f02db1` a été construit par Vercel en production dans le
+déploiement `dpl_7gyxNYbwo6UcdDTqDX6E9NhNGJfi`, puis `senario.app` et
+`www.senario.app` ont été rattachés au projet `scenario-site`.
+
+Contrôles réels exécutés : configuration DNS Vercel valide pour les deux noms,
+HTTPS 200 avec HSTS et `X-Robots-Tag: noindex, nofollow`, contenu Senario servi,
+préflight et catalogue Cloudflare 204/200 avec origine exacte
+`https://senario.app`. Les trois variables publiques validées de l'aperçu ont été
+ajoutées à l'environnement Vercel Production. Dans Supabase Auth, `site_url` vaut
+désormais `https://senario.app`; les origines apex, `www`, aperçu `5f9` et locales
+utiles sont explicitement autorisées. Un `supabase config diff` de contrôle ne
+montre ensuite aucune modification déclarée restante et les 18 propriétés distantes
+non déclarées, notamment SMTP et MFA, sont restées inchangées.
+
+L'E2E hébergé sur le domaine public a réussi avec le compte Owner synthétique :
+trois offres, bascule annuel/mensuel, connexion Supabase, lecture du compte via le
+Worker, déconnexion et viewport mobile. Il confirme également l'absence de jeton
+dans `localStorage` et `sessionStorage`. Il n'a créé aucun compte, envoyé aucun
+e-mail et déclenché aucun Checkout.
+
+Commandes principales de publication et de validation :
+
+```powershell
+npm.cmd run build
+npx.cmd --yes vercel@latest deploy --prod --yes --no-color
+npx.cmd --yes vercel@latest domains add senario.app scenario-site --no-color
+npx.cmd --yes vercel@latest domains add www.senario.app scenario-site --no-color
+npx.cmd --yes vercel@latest domains verify senario.app --no-color
+npx.cmd --yes vercel@latest domains verify www.senario.app --no-color
+npx.cmd supabase config diff --project-ref zblnsdyaoljnezxdidtx --workdir .tmp-supabase-publication
+npx.cmd supabase config push --project-ref zblnsdyaoljnezxdidtx --workdir .tmp-supabase-publication --yes
+$env:SCENARIO_TEST_SITE_URL='https://senario.app'
+node --experimental-transform-types scripts/phase11-site-e2e.mjs --hosted
+```
+
+Cette ouverture reste une bêta : noindex est conservé, aucun téléchargement public
+n'est ouvert et Stripe reste exclusivement en mode test. `publicationAuthorized`
+reste donc faux pour la publication commerciale finale ; l'autorisation distincte
+de bêta, son URL et son déploiement sont consignés dans `release/publication-plan.json`.

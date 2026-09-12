@@ -79,6 +79,65 @@ function channel(overrides: Partial<RealtimeCollaborationTransport> = {}) {
 }
 
 describe('realtime Supabase reconciliation', () => {
+  it('repairs only missing records of the authenticated author, preserving original attribution', async () => {
+    const appended: Record<string, unknown>[] = [];
+    const ledger = new SupabaseCollaborationLedger(
+      {
+        SUPABASE_URL: 'https://synthetic.supabase.co',
+        SUPABASE_SECRET_KEY: 'synthetic-secret',
+      } as WorkerEnvironment,
+      async (_url, init) => {
+        if (!init?.body) return Response.json([]);
+        assert.equal(typeof init.body, 'string');
+        appended.push(JSON.parse(init.body as string) as Record<string, unknown>);
+        return Response.json({ status: 'applied', cursor: 1 });
+      },
+    );
+    const record = {
+      ...operation,
+      actorId: context.profileId,
+      request_id: common.requestId,
+      cursor: 7,
+      receivedAt: new Date().toISOString(),
+    };
+    await ledger.reconcileOwnOperations({
+      ...common,
+      operations: [
+        record,
+        {
+          ...record,
+          actorId: 'another-profile',
+          operationId: crypto.randomUUID(),
+        },
+      ],
+    });
+    assert.equal(appended.length, 1);
+    assert.equal(appended[0].p_profile_id, context.profileId);
+    assert.equal(appended[0].p_request_id, common.requestId);
+    assert.equal(appended[0].p_operation_id, operation.operationId);
+    assert.equal(appended[0].p_checksum, operation.checksum);
+  });
+
+  it('repairs the ledger before acknowledging a poll', async () => {
+    const order: string[] = [];
+    const ledger: CollaborationLedger = {
+      appendOperation: async () => ({ status: 'applied', cursor: 1 }),
+      reconcileOwnOperations: async () => {
+        order.push('repair');
+      },
+      acknowledgeOperations: async () => {
+        order.push('ack');
+        return 1;
+      },
+    };
+    const transport = new ReconciledRealtimeTransport(channel(), ledger);
+    await transport.poll({
+      ...common,
+      connectionId: crypto.randomUUID(),
+      afterCursor: 0,
+    });
+    assert.deepEqual(order, ['repair', 'ack']);
+  });
   it('persists an operation after the channel and retries without double attribution', async () => {
     const order: string[] = [];
     let channelCalls = 0;

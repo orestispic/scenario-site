@@ -63,6 +63,66 @@ function common() {
 }
 
 describe('Studio Durable Object channel', () => {
+  it('isolates concurrent commands for three profiles through async authorization and storage', async () => {
+    const channel = new StudioRealtimeChannel(
+      state(new MemoryStorage()),
+      environment,
+    );
+    const transport = new CloudflareRealtimeTransport({
+      idFromName: (name) => name,
+      get: () => ({ fetch: (request) => channel.fetch(request) }),
+    });
+    const inputs = ['owner', 'editor', 'viewer'].map((role, index) => ({
+      ...common(),
+      context: {
+        ...common().context,
+        profileId: `10000000-0000-4000-8000-00000000000${index + 1}`,
+      },
+      authorization: {
+        scenarioId: SCENARIO,
+        role: role as 'owner' | 'editor' | 'viewer',
+      },
+    }));
+    const tickets = await Promise.all(
+      inputs.map((input) => transport.issueTicket(input)),
+    );
+    const connections = await Promise.all(
+      inputs.map((input, index) =>
+        transport.connect({
+          ...input,
+          ticket: tickets[index].ticket,
+          afterCursor: 0,
+        }),
+      ),
+    );
+    assert.deepEqual(
+      connections.map((connection) => connection.role),
+      ['owner', 'editor', 'viewer'],
+    );
+    for (let round = 0; round < 20; round += 1) {
+      await Promise.all(
+        inputs.flatMap((input, index) => [
+          transport.heartbeat({
+            ...input,
+            connectionId: connections[index].connectionId,
+          }),
+          transport.poll({
+            ...input,
+            connectionId: connections[index].connectionId,
+            afterCursor: 0,
+          }),
+        ]),
+      );
+    }
+    await Promise.all(
+      inputs.map((input, index) =>
+        transport.disconnect({
+          ...input,
+          connectionId: connections[index].connectionId,
+        }),
+      ),
+    );
+  });
   it('survives isolate replacement without persisting presence or raw tickets', async () => {
     const storage = new MemoryStorage();
     let channel = new StudioRealtimeChannel(state(storage), environment);

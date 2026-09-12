@@ -1,6 +1,7 @@
 import type {
   CollaborationSnapshotResponse,
   CollaborativeOperationRequest,
+  CollaborativeOperationRecord,
 } from '../../lib/commercial/contracts-v8.ts';
 import {
   CLOUD_CONTENT_TYPE,
@@ -24,6 +25,9 @@ type LedgerContext = CollaborationConnectionContext & {
 };
 
 export interface CollaborationLedger {
+  reconcileOwnOperations?(
+    input: LedgerContext & { operations: CollaborativeOperationRecord[] },
+  ): Promise<void>;
   appendOperation(
     input: LedgerContext & { operation: CollaborativeOperationRequest },
   ): Promise<{ status: 'applied' | 'replayed' | 'conflict'; cursor: number }>;
@@ -187,6 +191,53 @@ export class SupabaseCollaborationLedger implements CollaborationLedger {
     private readonly environment: WorkerEnvironment,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
+
+  async reconcileOwnOperations(
+    input: LedgerContext & { operations: CollaborativeOperationRecord[] },
+  ) {
+    // Only repair records returned by the private channel for the currently
+    // authenticated author. Never borrow a reader/viewer's identity to append
+    // somebody else's operation. The SQL RPC rechecks current rights/device.
+    const own = input.operations.filter(
+      (operation) => operation.actorId === input.context.profileId,
+    );
+    if (!own.length) return;
+    const query = new URLSearchParams({
+      studio_id: `eq.${input.studioId}`,
+      operation_id: `in.(${own.map((operation) => operation.operationId).join(',')})`,
+      select: 'operation_id',
+    });
+    const response = await detachedFetch(
+      this.fetcher,
+      `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/studio_collaboration_operations?${query}`,
+      { headers: supabaseAdminHeaders(this.environment) },
+    );
+    if (!response.ok)
+      throw new CommercialRepositoryError(
+        503,
+        'collaboration_ledger_unavailable',
+        'Journal indisponible.',
+      );
+    const rows = (await response.json()) as Array<{ operation_id: string }>;
+    const existing = new Set(rows.map((row) => row.operation_id));
+    for (const record of own
+      .filter((item) => !existing.has(item.operationId))
+      .slice(0, 8)) {
+      if (existing.has(record.operationId)) continue;
+      const {
+        actorId: _actor,
+        request_id,
+        cursor: _cursor,
+        receivedAt: _received,
+        ...operation
+      } = record;
+      await this.appendOperation({
+        ...input,
+        requestId: request_id,
+        operation,
+      });
+    }
+  }
 
   appendOperation(
     input: LedgerContext & { operation: CollaborativeOperationRequest },
@@ -547,6 +598,12 @@ export class ReconciledRealtimeTransport implements RealtimeCollaborationTranspo
 
   async poll(input: Parameters<RealtimeCollaborationTransport['poll']>[0]) {
     const result = await this.channel.poll(input);
+    await this.ledger.reconcileOwnOperations?.({
+      ...input,
+      operations: result.events.flatMap((event) =>
+        event.type === 'operation.applied' ? [event.operation] : [],
+      ),
+    });
     await this.ledger.acknowledgeOperations({
       context: input.context,
       origin: input.origin,

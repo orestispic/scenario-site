@@ -170,6 +170,8 @@ export class StudioRealtimeChannel {
   private readonly authorization = new RequestAuthorization();
   private readonly transport: DeterministicLocalRealtimeTransport;
   private readonly ready: Promise<void>;
+  private commands: Promise<unknown> = Promise.resolve();
+  private queuedCommands = 0;
 
   constructor(
     private readonly state: ChannelState,
@@ -193,6 +195,22 @@ export class StudioRealtimeChannel {
   }
 
   async fetch(request: Request): Promise<Response> {
+    // Await points allow multiple fetch handlers to interleave in a Durable
+    // Object. Serialize authorization + mutation + persistence as one command.
+    // Otherwise RequestAuthorization.current can belong to another profile.
+    if (this.queuedCommands >= 64)
+      return Response.json({ code: 'channel_unavailable' }, { status: 503 });
+    this.queuedCommands += 1;
+    const result = this.commands.then(() => this.execute(request));
+    this.commands = result.catch(() => undefined);
+    try {
+      return await result;
+    } finally {
+      this.queuedCommands -= 1;
+    }
+  }
+
+  private async execute(request: Request): Promise<Response> {
     await this.ready;
     if (request.method !== 'POST')
       return Response.json({ code: 'method_not_allowed' }, { status: 405 });

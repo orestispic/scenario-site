@@ -236,9 +236,11 @@ variables Vercel Preview enregistrées sont les valeurs publiques API/Supabase.
 `.vercelignore` exclut environnements, Worker, Supabase, scripts, tests, documents
 et livrables opérationnels de l'archive envoyée.
 
-Prévisualisation Vercel privée créée et déclarée `READY` :
-`https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app`.
-Elle est ajoutée comme origine **exacte** à la préproduction Cloudflare ; aucun
+Prévisualisation Vercel privée remplacée et déclarée `READY` après la présentation
+des trois plans :
+`https://scenario-site-lk1438ewn-orepicard-4993s-projects.vercel.app`.
+Elle est ajoutée comme origine **exacte** à la préproduction Cloudflare et
+l'ancienne URL est retirée ; aucun
 wildcard Vercel n'est autorisé. Cette URL peut être retirée lors du remplacement
 de la prévisualisation. Le domaine acheté reste non connecté et la production
 Vercel existante n'est pas remplacée. La validation réelle et la version Worker
@@ -249,8 +251,8 @@ page du registrar (expiration 12 septembre 2027, renouvellement automatique acti
 nameservers Vercel). `domainOwnershipVerified` passe donc à true. Le domaine ne
 sert encore aucun projet : DNS/TLS applicatif reste bloqué jusqu'à la promotion.
 
-Le Worker préproduction a ensuite été redéployé, version
-`f3347e14-0c87-4d43-ad4c-c81d27d35531`, uniquement pour ajouter cette origine
+Le Worker préproduction a d'abord reçu le catalogue groupé, version
+`277937cc-145f-40e9-9a52-7f887f998553`, puis doit être redéployé pour remplacer l'origine
 exacte. Lecture réelle CORS : 200, contrat v11, `Access-Control-Allow-Origin`
 strictement égal à l'URL de preview. La preview exige l'authentification Vercel ;
 une lecture CLI authentifiée a confirmé le titre `senario`, `noindex, nofollow`

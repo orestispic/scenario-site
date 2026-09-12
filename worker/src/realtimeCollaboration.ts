@@ -141,12 +141,21 @@ export class CloudflareRealtimeTransport implements RealtimeCollaborationTranspo
         body: JSON.stringify(body),
       }),
     );
-    if (!response.ok)
+    if (!response.ok) {
+      const payload = await response
+        .json<{ code?: unknown }>()
+        .catch(() => null);
+      const code =
+        typeof payload?.code === 'string' &&
+        /^[a-z][a-z0-9_]{0,63}$/.test(payload.code)
+          ? payload.code
+          : 'channel_unavailable';
       throw new CommercialRepositoryError(
         response.status,
-        'channel_unavailable',
+        code,
         'Canal collaboratif indisponible.',
       );
+    }
     return response.json() as Promise<T>;
   }
   issueTicket(

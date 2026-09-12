@@ -21,6 +21,7 @@
     "phase9:accounts:validate": "node scripts/phase9-validate-test-accounts.mjs",
     "phase9:studio:provision": "node scripts/phase9-provision-studio-fixture.mjs",
     "phase9:studio:secret": "node scripts/phase9-configure-studio-invitation-secret.mjs",
+    "phase9:realtime:validate": "node scripts/phase9-validate-hosted-realtime.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

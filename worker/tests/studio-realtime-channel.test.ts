@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CollaborativeOperationRequest } from '../../lib/commercial/contracts-v8.ts';
+import { CommercialRepositoryError } from '../src/types.ts';
 import {
   CloudflareRealtimeTransport,
   collaborativeOperationChecksum,
@@ -148,5 +149,35 @@ describe('Studio Durable Object channel', () => {
       }),
     );
     assert.equal(response.status, 403);
+  });
+
+  it('preserves a bounded channel rejection code through the Cloudflare bridge', async () => {
+    const channel = new StudioRealtimeChannel(
+      state(new MemoryStorage()),
+      environment,
+    );
+    const namespace: CollaborationChannelNamespace = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: (request) => channel.fetch(request) }),
+    };
+    const transport = new CloudflareRealtimeTransport(namespace);
+    const input = common();
+    const issued = await transport.issueTicket(input);
+    const connection = {
+      ...input,
+      requestId: crypto.randomUUID(),
+      ticket: issued.ticket,
+      afterCursor: 0,
+    };
+    await transport.connect(connection);
+    await assert.rejects(
+      () => transport.connect(connection),
+      (error: unknown) => {
+        assert.ok(error instanceof CommercialRepositoryError);
+        assert.equal(error.status, 401);
+        assert.equal(error.code, 'collaboration_ticket_invalid');
+        return true;
+      },
+    );
   });
 });

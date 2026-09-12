@@ -792,6 +792,17 @@ export class SupabaseCloudScenarioRepository implements CloudScenarioRepository 
   }
 }
 
+export function resolveSupabaseSignedDownloadUrl(base: string, signed: string, objectPath: string): string {
+  try {
+    const url = new URL(signed.startsWith('/object/sign/') ? `/storage/v1${signed}` : signed, base);
+    const expected = new URL(`/storage/v1/object/sign/${objectPath}`, base);
+    if (url.origin !== expected.origin || url.pathname !== expected.pathname || url.username || url.password || url.hash || !url.searchParams.get('token')) throw new Error();
+    return url.toString();
+  } catch {
+    throw new CommercialRepositoryError(503, 'cloud_storage_unavailable', 'URL temporaire invalide.');
+  }
+}
+
 export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
   constructor(
     private readonly environment: WorkerEnvironment,
@@ -862,14 +873,14 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
         'Téléchargement temporairement indisponible.',
       );
     const value = (await response.json()) as { signedURL?: string };
-    if (!value.signedURL)
+    if (typeof value.signedURL !== 'string' || !value.signedURL)
       throw new CommercialRepositoryError(
         503,
         'cloud_storage_unavailable',
         'URL temporaire indisponible.',
       );
     return {
-      url: new URL(value.signedURL, this.environment.SUPABASE_URL).toString(),
+      url: resolveSupabaseSignedDownloadUrl(this.environment.SUPABASE_URL, value.signedURL, `${this.bucket}/${input.key}`),
       operation: 'download',
       expiresAt: new Date(
         Date.now() + input.expiresInSeconds * 1000,

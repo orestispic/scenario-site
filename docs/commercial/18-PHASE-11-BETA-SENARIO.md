@@ -189,3 +189,33 @@ publication-plan échouent **intentionnellement** et restent bloquants.
 La validation hébergée du nouveau catalogue/portail et le commit déployé sont
 enregistrés dans l'addendum une fois effectués. Aucun résultat en attente n'est
 compté comme une validation réelle réussie.
+
+## Addendum — validations finales du lot
+
+- Commit serveur `9f28191` déployé **uniquement en préproduction** ; version Worker
+  `2267d017-20ad-4b42-8267-eca0d72760fe`. Aucun SQL appliqué, aucun secret changé.
+- `npm.cmd run phase11:health` réellement exécuté : `/v1/config` et `/v11/catalog`
+  répondent 200, staging/test confirmés (736 ms et 461 ms, observations ponctuelles).
+- `node --experimental-transform-types scripts/phase11-site-e2e.mjs --hosted` :
+  **réussite réelle** Edge + Supabase + Cloudflare, quatre offres, connexion du
+  compte Owner synthétique existant, lecture du compte, actualisation, mobile,
+  déconnexion. Aucun paiement, inscription, changement de mot de passe ou e-mail
+  réel par ce test ; les autres requêtes externes sont refusées par son filtre.
+- Suite finale API/contrats/migrations : **143 réussites**. Application : 119.
+- Lint étendu réussi sur Worker, observabilité, scripts phase11 et config Vite ;
+  lint ciblé du site/runtime/contrats/tests réussi, scans sécurité serveur/client.
+- Dernier installateur Windows regénéré après l'optimisation : 3 464 201 octets,
+  SHA-256 `b5435f0e6a05785ac1c53365a33bb3b45c537e5996df8dbcf45b0c7c813b56ad`,
+  statut `NotSigned` attendu. Toujours non installé et non publié.
+
+L'aperçu local du site est `http://127.0.0.1:4173/` (aucun hébergement public).
+Pour le relancer ultérieurement : `npm.cmd run dev:beta` dans ce worktree, ou
+`npm.cmd run build:beta` puis `npm.cmd exec vite -- preview --config vite.vercel.config.ts --host 127.0.0.1 --port 4173 --strictPort`.
+Le script historique `npm run dev` reste le bac Vinext des phases initiales et
+n'est pas la nouvelle entrée commerciale. Le dossier `.openai` est préservé ;
+les instructions Sites ont guidé la réutilisation de l'architecture et l'aperçu,
+sans enregistrement ni publication sur un nouveau service.
+
+Le test de stabilité réel a précédé le déploiement v11 (il n'a pas été présenté
+comme un soak post-déploiement). Les fichiers serveur modifiés pour v11 ne touchent
+pas la synchronisation. La connexion au site après déploiement est validée à part.

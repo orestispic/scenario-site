@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "dev:beta": "vite --config vite.vercel.config.ts --mode phase9 --host 127.0.0.1 --port 4173 --strictPort",
     "build": "vite build --config vite.vercel.config.ts",
     "build:beta": "vite build --config vite.vercel.config.ts --mode phase9",
     "release:check": "node scripts/phase11-readiness.mjs",

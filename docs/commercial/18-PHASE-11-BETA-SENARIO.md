@@ -252,9 +252,11 @@ nameservers Vercel). `domainOwnershipVerified` passe donc à true. Le domaine ne
 sert encore aucun projet : DNS/TLS applicatif reste bloqué jusqu'à la promotion.
 
 Le Worker préproduction a d'abord reçu le catalogue groupé, version
-`277937cc-145f-40e9-9a52-7f887f998553`, puis doit être redéployé pour remplacer l'origine
-exacte. Lecture réelle CORS : 200, contrat v11, `Access-Control-Allow-Origin`
-strictement égal à l'URL de preview. La preview exige l'authentification Vercel ;
+`277937cc-145f-40e9-9a52-7f887f998553`, puis a été redéployé en version
+`ac26cc3d-aa5f-49ae-bf8e-b9116ee97c4b` pour remplacer l'origine exacte.
+Une lecture réelle confirme : statut 200, CORS strictement égal à la preview,
+plans Gratuite/Auteur/Studio, 0 EUR, 8,80/88 EUR et 15/150 EUR, avec quatre,
+quatre et cinq fonctionnalités. La preview exige l'authentification Vercel ;
 une lecture CLI authentifiée a confirmé le titre `senario`, `noindex, nofollow`
-et le bundle attendu. La capture Edge du parcours compte/offres mobile est créée
+et le nouveau bundle. La capture Edge du parcours compte/offres mobile est créée
 localement dans les outputs ignorés. Aucun checkout ou e-mail réel.

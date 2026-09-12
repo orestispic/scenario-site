@@ -12,12 +12,12 @@ manquant. Le token n'est ni affiché ni stocké. Les contrats publics et toutes 
 migrations restent inchangés. Trois tests spécifiques couvrent ces invariants
 et l'adaptateur de stockage complet.
 
-Cette correction serveur est **locale, non déployée** : le dernier Worker hébergé
-reste celui autorisé précédemment, `6ebd21c` / version
-`bee273c7-bde7-4509-aa02-ee1a2cf7f016`. Le nouveau client supporte l'ancienne forme
-d'URL de manière limitée et vérifie les octets par SHA-256, ce qui permet de tester
-le parcours réel sans nouveau déploiement. Aucun `db push`, migration, push Git,
-paiement, notification ou création de compte n'a été exécuté.
+Après autorisation explicite, le commit `035da9e` a été déployé sur
+`scenario-commercial-api-preproduction`. Version Cloudflare retournée :
+`aa7b9b6f-ca7d-401a-a8d3-6faba9d8d152`. Le nouveau client conserve sa compatibilité
+bornée avec l'ancienne forme et vérifie toujours les octets par SHA-256. Aucun
+`db push`, migration, push Git, paiement, notification ou création de compte n'a
+été exécuté.
 
 Validations locales :
 
@@ -41,6 +41,12 @@ transactions ProseMirror et sauvegarde locale avant de rejoindre. 96 tests clien
 et validation Edge des menus aux zooms 60/100/160 % réussis. La comparaison réelle
 des documents reconstruits pour trois comptes **successifs** a réussi ; aucun
 texte ajouté aux scénarios hébergés.
+
+Le test réel Owner/Editor a ensuite ajouté simultanément deux paragraphes
+synthétiques vides à IDs réservés et obtenu le même JSON des deux côtés. Le script
+les retire du document visible par des tombstones convergents ; les opérations
+restent dans l'audit append-only. Aucun texte utilisateur ou contenu de scénario
+n'est affiché dans les sorties.
 
 Le test simultané de 60 secondes incluant les trois lecteurs du diagnostic et les
 onglets interactifs a rencontré deux 429 d'ingress. Il n'est pas présenté comme

@@ -8,6 +8,7 @@ import type {
   CollaborationSnapshotResponse,
   CollaborativeOperationRecord,
   CollaborativeOperationRequest,
+  CollaborativeMutation,
   ConnectionCloseReason,
 } from '../../lib/commercial/contracts-v8.ts';
 import type { StudioContext, StudioRepository } from './studio.ts';
@@ -98,6 +99,14 @@ export interface RealtimeCollaborationTransport {
   ): Promise<
     Omit<CollaborationSnapshotResponse, 'contractVersion' | 'request_id'>
   >;
+  snapshotArtifact?(
+    input: CollaborationConnectionContext & {
+      studioId: string;
+      connectionId: string;
+      snapshotId: string;
+      requestId: string;
+    },
+  ): Promise<CollaborationSnapshotArtifact>;
   disconnect(
     input: CollaborationConnectionContext & {
       studioId: string;
@@ -114,6 +123,22 @@ export interface RealtimeCollaborationTransport {
     profileId: string,
     reason?: ConnectionCloseReason,
   ): Promise<void>;
+}
+
+export interface CollaborationSnapshotArtifact {
+  snapshotId: string;
+  versionId: string;
+  parentVersionId: string;
+  channelCursor: number;
+  operationIds: string[];
+  entries: Array<{
+    blockId: string;
+    tombstone: boolean;
+    operationId: string;
+    logicalClock: number;
+    actorId: string;
+    mutation: CollaborativeMutation;
+  }>;
 }
 
 export interface CollaborationChannelNamespace {
@@ -190,6 +215,17 @@ export class CloudflareRealtimeTransport implements RealtimeCollaborationTranspo
       Awaited<ReturnType<RealtimeCollaborationTransport['compact']>>
     >(input.studioId, 'compact', input);
   }
+  snapshotArtifact(
+    input: Parameters<
+      NonNullable<RealtimeCollaborationTransport['snapshotArtifact']>
+    >[0],
+  ) {
+    return this.call<CollaborationSnapshotArtifact>(
+      input.studioId,
+      'snapshot-artifact',
+      input,
+    );
+  }
   async disconnect(
     input: Parameters<RealtimeCollaborationTransport['disconnect']>[0],
   ) {
@@ -249,6 +285,7 @@ type Channel = {
     string,
     Omit<CollaborationSnapshotResponse, 'contractVersion' | 'request_id'>
   >;
+  snapshotArtifacts: Map<string, CollaborationSnapshotArtifact>;
 };
 
 export type DurableRealtimeState = {
@@ -270,6 +307,7 @@ export type DurableRealtimeState = {
         Omit<CollaborationSnapshotResponse, 'contractVersion' | 'request_id'>,
       ]
     >;
+    snapshotArtifacts?: Array<[string, CollaborationSnapshotArtifact]>;
   }>;
 };
 
@@ -351,6 +389,9 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
         conflicts: structuredClone(value.conflicts),
         snapshots: structuredClone(value.snapshots),
         compactions: new Map(structuredClone(value.compactions)),
+        snapshotArtifacts: new Map(
+          structuredClone(value.snapshotArtifacts ?? []),
+        ),
       });
   }
 
@@ -381,6 +422,9 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
           key,
           structuredClone(item),
         ]),
+        snapshotArtifacts: [...value.snapshotArtifacts.entries()].map(
+          ([key, item]) => [key, structuredClone(item)],
+        ),
       })),
     };
   }
@@ -712,6 +756,14 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
       checksum,
       replayed: false,
     };
+    channel.snapshotArtifacts.set(snapshotId, {
+      snapshotId,
+      versionId: value.versionId,
+      parentVersionId: input.parentVersionId,
+      channelCursor: channel.cursor,
+      operationIds: [...channel.operations.keys()].sort(),
+      entries: structuredClone(snapshotPayload),
+    });
     channel.snapshots.push(structuredClone(value));
     channel.compactions.set(input.idempotencyHash, structuredClone(value));
     this.append(input.studioId, {
@@ -737,6 +789,28 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
       cursor: channel.cursor,
     });
     return value;
+  }
+
+  async snapshotArtifact(
+    input: CollaborationConnectionContext & {
+      studioId: string;
+      connectionId: string;
+      snapshotId: string;
+      requestId: string;
+    },
+  ) {
+    this.sweep();
+    await this.requireConnection(input, true);
+    const artifact = this.channel(input.studioId).snapshotArtifacts.get(
+      input.snapshotId,
+    );
+    if (!artifact)
+      throw new CommercialRepositoryError(
+        404,
+        'collaboration_snapshot_missing',
+        'Snapshot collaboratif introuvable.',
+      );
+    return structuredClone(artifact);
   }
 
   async disconnect(
@@ -826,6 +900,7 @@ export class DeterministicLocalRealtimeTransport implements RealtimeCollaboratio
         conflicts: [],
         snapshots: [],
         compactions: new Map(),
+        snapshotArtifacts: new Map(),
       };
       this.channels.set(studioId, channel);
     }

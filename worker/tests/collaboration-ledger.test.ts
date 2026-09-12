@@ -3,10 +3,16 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { CollaborativeOperationRequest } from '../../lib/commercial/contracts-v8.ts';
 import {
+  mergeCollaborationSnapshot,
   ReconciledRealtimeTransport,
   SupabaseCollaborationLedger,
+  SupabaseCollaborationSnapshotPersistence,
   type CollaborationLedger,
 } from '../src/collaborationLedger.ts';
+import type {
+  CloudScenarioRepository,
+  ScenarioObjectStorage,
+} from '../src/cloudSync.ts';
 import type { RealtimeCollaborationTransport } from '../src/realtimeCollaboration.ts';
 import type { WorkerEnvironment } from '../src/types.ts';
 
@@ -213,4 +219,158 @@ describe('realtime Supabase reconciliation', () => {
     assert.match(requests[0].url, /operation_id=in\.%28/);
     assert.equal(requests[1].body?.p_cursor, 41);
   });
+
+  it('merges winning mutations into a complete scenario without dropping metadata', () => {
+    const parent = new TextEncoder().encode(
+      JSON.stringify({
+        formatVersion: 1,
+        title: 'Synthetic scenario',
+        content: {
+          type: 'doc',
+          content: [
+            { type: 'paragraph', attrs: { blockId: 'keep' } },
+            { type: 'paragraph', attrs: { blockId: 'remove' } },
+          ],
+        },
+        characters: ['A'],
+        comments: [{ id: 'preserved' }],
+      }),
+    );
+    const merged = mergeCollaborationSnapshot(parent, {
+      snapshotId: crypto.randomUUID(),
+      versionId: crypto.randomUUID(),
+      parentVersionId: operation.baseVersionId,
+      channelCursor: 3,
+      operationIds: [operation.operationId],
+      entries: [
+        {
+          blockId: 'remove',
+          tombstone: true,
+          operationId: crypto.randomUUID(),
+          logicalClock: 1,
+          actorId: context.profileId,
+          mutation: { type: 'block.delete', blockId: 'remove' },
+        },
+        {
+          blockId: 'added',
+          tombstone: false,
+          operationId: crypto.randomUUID(),
+          logicalClock: 2,
+          actorId: context.profileId,
+          mutation: {
+            type: 'block.upsert',
+            blockId: 'added',
+            afterBlockId: 'keep',
+            block: { type: 'paragraph', attrs: { blockId: 'added' } },
+          },
+        },
+      ],
+    });
+    const document = JSON.parse(new TextDecoder().decode(merged));
+    assert.deepEqual(document.characters, ['A']);
+    assert.deepEqual(document.comments, [{ id: 'preserved' }]);
+    assert.deepEqual(
+      document.content.content.map((block: Record<string, unknown>) =>
+        blockIdForTest(block),
+      ),
+      ['keep', 'added'],
+    );
+  });
+
+  it('uploads bytes before atomically committing matching snapshot and version ids', async () => {
+    const snapshotId = '70000000-0000-4000-8000-000000000001';
+    const versionId = '80000000-0000-4000-8000-000000000001';
+    const order: string[] = [];
+    let stored: Uint8Array | undefined;
+    let rpcBody: Record<string, unknown> | undefined;
+    const cloud = {
+      list: async () => [
+        {
+          id: operation.scenarioId,
+          title: 'Synthetic scenario',
+          role: 'owner' as const,
+          currentVersionId: operation.baseVersionId,
+          deletedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      storageKey: async () => 'parent.scenario',
+    } as unknown as CloudScenarioRepository;
+    const storage: ScenarioObjectStorage = {
+      get: async () =>
+        new TextEncoder().encode(
+          JSON.stringify({
+            formatVersion: 1,
+            title: 'Synthetic scenario',
+            content: { type: 'doc', content: [] },
+          }),
+        ),
+      put: async ({ bytes }) => {
+        order.push('object');
+        stored = bytes;
+      },
+      temporaryDownload: async () => {
+        throw new Error('not used');
+      },
+    };
+    const persistence = new SupabaseCollaborationSnapshotPersistence(
+      {
+        SUPABASE_URL: 'https://synthetic.supabase.co',
+        SUPABASE_SECRET_KEY: 'synthetic-secret',
+      } as WorkerEnvironment,
+      cloud,
+      storage,
+      'synthetic-storage-key-pepper',
+      async (input, init) => {
+        const url =
+          input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.href
+              : input;
+        if (url.includes('studio_collaboration_operations?'))
+          return Response.json([
+            { operation_id: operation.operationId, cursor: 41 },
+          ]);
+        order.push('sql');
+        assert.equal(typeof init?.body, 'string');
+        rpcBody = JSON.parse(init?.body as string);
+        return Response.json({ replayed: false });
+      },
+    );
+    const result = await persistence.persist({
+      ...common,
+      connectionId: crypto.randomUUID(),
+      idempotencyHash: 'c'.repeat(64),
+      parentVersionId: operation.baseVersionId,
+      channel: {
+        snapshotId,
+        versionId,
+        parentVersionId: operation.baseVersionId,
+        cursor: 3,
+        checksum: 'd'.repeat(64),
+        replayed: false,
+      },
+      artifact: {
+        snapshotId,
+        versionId,
+        parentVersionId: operation.baseVersionId,
+        channelCursor: 3,
+        operationIds: [operation.operationId],
+        entries: [],
+      },
+    });
+    assert.deepEqual(order, ['object', 'sql']);
+    assert.ok(stored && stored.byteLength > 2);
+    assert.equal(rpcBody?.p_snapshot_id, snapshotId);
+    assert.equal(rpcBody?.p_version_id, versionId);
+    assert.equal(rpcBody?.p_through_cursor, 41);
+    assert.equal(result.snapshotId, snapshotId);
+    assert.equal(result.versionId, versionId);
+  });
 });
+
+function blockIdForTest(block: Record<string, unknown>) {
+  return (block.attrs as { blockId?: string } | undefined)?.blockId;
+}

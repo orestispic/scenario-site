@@ -133,6 +133,39 @@ describe('Studio Durable Object channel', () => {
     });
     assert.equal(caughtUp.events.length, 1);
     assert.equal(caughtUp.events[0]?.type, 'operation.applied');
+
+    const snapshot = await transport.compact({
+      ...next,
+      requestId: crypto.randomUUID(),
+      connectionId: resumed.connectionId,
+      parentVersionId: VERSION,
+      idempotencyHash: 'durable-snapshot-test',
+    });
+    const firstArtifact = await transport.snapshotArtifact({
+      ...next,
+      requestId: crypto.randomUUID(),
+      connectionId: resumed.connectionId,
+      snapshotId: snapshot.snapshotId,
+    });
+    assert.deepEqual(firstArtifact.operationIds, [operation.operationId]);
+    assert.equal(firstArtifact.entries[0]?.blockId, 'block-1');
+
+    channel = new StudioRealtimeChannel(state(storage), environment);
+    const restored = common();
+    const restoredTicket = await transport.issueTicket(restored);
+    const restoredConnection = await transport.connect({
+      ...restored,
+      requestId: crypto.randomUUID(),
+      ticket: restoredTicket.ticket,
+      afterCursor: snapshot.cursor,
+    });
+    const restoredArtifact = await transport.snapshotArtifact({
+      ...restored,
+      requestId: crypto.randomUUID(),
+      connectionId: restoredConnection.connectionId,
+      snapshotId: snapshot.snapshotId,
+    });
+    assert.deepEqual(restoredArtifact, firstArtifact);
   });
 
   it('fails closed when the parent Worker omits authorization', async () => {

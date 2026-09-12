@@ -72,6 +72,7 @@ export interface ScenarioObjectStorage {
     contentType: string;
     checksum: string;
   }): Promise<void>;
+  get(key: string): Promise<Uint8Array>;
   temporaryDownload(input: {
     key: string;
     profileId: string;
@@ -528,6 +529,16 @@ export class LocalScenarioObjectStorage implements ScenarioObjectStorage {
       checksum: input.checksum,
     });
   }
+  async get(key: string): Promise<Uint8Array> {
+    const object = this.objects.get(key);
+    if (!object)
+      throw new CommercialRepositoryError(
+        404,
+        'cloud_object_missing',
+        'Objet introuvable.',
+      );
+    return object.bytes.slice();
+  }
   async temporaryDownload(
     input: Parameters<ScenarioObjectStorage['temporaryDownload']>[0],
   ): Promise<TemporaryObjectGrant> {
@@ -812,6 +823,22 @@ export class SupabaseScenarioObjectStorage implements ScenarioObjectStorage {
         'cloud_storage_unavailable',
         'Stockage temporairement indisponible.',
       );
+  }
+  async get(key: string): Promise<Uint8Array> {
+    const response = await detachedFetch(
+      this.fetcher,
+      `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/authenticated/${this.bucket}/${key}`,
+      { headers: supabaseAdminHeaders(this.environment) },
+    );
+    if (!response.ok)
+      throw new CommercialRepositoryError(
+        response.status === 404 ? 404 : 503,
+        response.status === 404
+          ? 'cloud_object_missing'
+          : 'cloud_storage_unavailable',
+        'Snapshot parent indisponible.',
+      );
+    return new Uint8Array(await response.arrayBuffer());
   }
   async temporaryDownload(
     input: Parameters<ScenarioObjectStorage['temporaryDownload']>[0],

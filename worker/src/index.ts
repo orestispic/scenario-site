@@ -26,6 +26,7 @@ import { CloudflareRealtimeTransport } from './realtimeCollaboration.ts';
 import {
   ReconciledRealtimeTransport,
   SupabaseCollaborationLedger,
+  SupabaseCollaborationSnapshotPersistence,
 } from './collaborationLedger.ts';
 import { normalizeHostedSupabaseUrl } from './supabaseAdmin.ts';
 
@@ -108,12 +109,29 @@ const productionWorker = {
           required(environment, 'OFFLINE_GRANT_PUBLIC_JWK'),
         ) as JsonWebKey,
       );
+      const cloudRepository = new SupabaseCloudScenarioRepository(
+        runtimeEnvironment,
+      );
+      const scenarioStorage = new SupabaseScenarioObjectStorage(
+        runtimeEnvironment,
+        environment.CLOUD_STORAGE_BUCKET ?? 'scenario-documents',
+      );
+      const cloudIdempotencyPepper = required(
+        environment,
+        'CLOUD_IDEMPOTENCY_PEPPER',
+      );
       let realtimeTransport;
       if (environment.STUDIO_REALTIME_CHANNEL) {
         required(environment, 'STUDIO_TICKET_PEPPER');
         realtimeTransport = new ReconciledRealtimeTransport(
           new CloudflareRealtimeTransport(environment.STUDIO_REALTIME_CHANNEL),
           new SupabaseCollaborationLedger(runtimeEnvironment),
+          new SupabaseCollaborationSnapshotPersistence(
+            runtimeEnvironment,
+            cloudRepository,
+            scenarioStorage,
+            cloudIdempotencyPepper,
+          ),
         );
       }
       runtime = createCommercialWorker({
@@ -190,17 +208,9 @@ const productionWorker = {
             4_194_304,
           ),
         },
-        cloudRepository: new SupabaseCloudScenarioRepository(
-          runtimeEnvironment,
-        ),
-        scenarioStorage: new SupabaseScenarioObjectStorage(
-          runtimeEnvironment,
-          environment.CLOUD_STORAGE_BUCKET ?? 'scenario-documents',
-        ),
-        cloudIdempotencyPepper: required(
-          environment,
-          'CLOUD_IDEMPOTENCY_PEPPER',
-        ),
+        cloudRepository,
+        scenarioStorage,
+        cloudIdempotencyPepper,
         cloudPolicy: {
           maximumBodyBytes: boundedInteger(
             environment.CLOUD_MAX_BODY_BYTES,

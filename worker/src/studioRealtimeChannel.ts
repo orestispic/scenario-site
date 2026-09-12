@@ -258,6 +258,13 @@ export class StudioRealtimeChannel {
           );
           persist = true;
           break;
+        case 'snapshot-artifact':
+          result = await this.transport.snapshotArtifact(
+            body as unknown as Parameters<
+              DeterministicLocalRealtimeTransport['snapshotArtifact']
+            >[0],
+          );
+          break;
         case 'disconnect':
           await this.transport.disconnect(
             body as unknown as Parameters<

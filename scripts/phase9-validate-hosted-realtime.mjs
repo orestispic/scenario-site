@@ -9,6 +9,7 @@ import { accountDefinitions } from './phase9-provision-test-accounts.mjs';
 
 const ORIGIN = 'http://127.0.0.1:1420';
 const PLATFORM = 'windows';
+const STORAGE_BUCKET = 'scenario-documents-preproduction';
 
 function required(environment, name) {
   const value = environment[name]?.trim();
@@ -66,6 +67,16 @@ async function ledgerRows(supabaseUrl, secretKey, table, parameters) {
   if (!response.ok || !Array.isArray(payload))
     throw new Error(`Hosted ${table} ledger verification failed.`);
   return payload;
+}
+
+async function storedObject(supabaseUrl, secretKey, storageKey) {
+  const response = await fetch(
+    `${supabaseUrl}/storage/v1/object/authenticated/${STORAGE_BUCKET}/${storageKey}`,
+    { headers: adminHeaders(secretKey) },
+  );
+  if (!response.ok)
+    throw new Error('Hosted private collaboration snapshot is unavailable.');
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 async function readResponse(response) {
@@ -290,13 +301,29 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
       };
     }
 
-    const baseVersionId = await currentVersionId(
+    const currentCloudVersionId = await currentVersionId(
       apiUrl,
       scenarioId,
       inputs.owner.session,
       inputs.owner.device,
       clientVersion,
     );
+    const operationId = deterministicUuid(
+      `${projectRef}:phase9:hosted-realtime:operation:v1`,
+    );
+    const existingOperations = await ledgerRows(
+      supabaseUrl,
+      secretKey,
+      'studio_collaboration_operations',
+      {
+        studio_id: `eq.${studioId}`,
+        operation_id: `eq.${operationId}`,
+        select: 'base_version_id',
+        limit: '1',
+      },
+    );
+    const baseVersionId =
+      existingOperations[0]?.base_version_id ?? currentCloudVersionId;
     for (const role of ['owner', 'editor', 'viewer']) {
       const connection = await connect(inputs[role]);
       connections.push({ input: inputs[role], id: connection.connectionId });
@@ -340,9 +367,6 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
         'Hosted presence does not contain the three synthetic roles.',
       );
 
-    const operationId = deterministicUuid(
-      `${projectRef}:phase9:hosted-realtime:operation:v1`,
-    );
     const unsignedOperation = {
       studioId,
       scenarioId,
@@ -468,6 +492,103 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
     if (acknowledgements.length !== 1)
       throw new Error('Hosted cursor acknowledgement was not persisted.');
 
+    let snapshots = await ledgerRows(
+      supabaseUrl,
+      secretKey,
+      'studio_collaboration_snapshots',
+      {
+        studio_id: `eq.${studioId}`,
+        select:
+          'id,version_id,parent_version_id,through_cursor,storage_key,checksum',
+        order: 'created_at.desc',
+        limit: '1',
+      },
+    );
+    let compactionStatus = 'existing';
+    if (snapshots.length === 0) {
+      if (baseVersionId !== currentCloudVersionId)
+        throw new Error('Hosted compaction parent is no longer current.');
+      const compacted = await realtimePost({
+        ...inputs.owner,
+        action: 'compact',
+        body: {
+          connectionId: inputs.owner.connection.connectionId,
+          parentVersionId: currentCloudVersionId,
+        },
+        key: 'phase9-realtime-compaction-v2-owner',
+      });
+      compactionStatus = compacted.payload?.replayed ? 'replayed' : 'created';
+      snapshots = await ledgerRows(
+        supabaseUrl,
+        secretKey,
+        'studio_collaboration_snapshots',
+        {
+          studio_id: `eq.${studioId}`,
+          id: `eq.${compacted.payload?.snapshotId}`,
+          select:
+            'id,version_id,parent_version_id,through_cursor,storage_key,checksum',
+        },
+      );
+      const snapshotPoll = await realtimePost({
+        ...inputs.editor,
+        action: 'poll',
+        body: {
+          connectionId: inputs.editor.connection.connectionId,
+          afterCursor: poll.payload.nextCursor,
+        },
+        key: `phase9-realtime-snapshot-poll-${crypto.randomUUID()}`,
+      });
+      if (
+        !snapshotPoll.payload?.events?.some(
+          (event) =>
+            event.type === 'snapshot.created' &&
+            event.snapshotId === compacted.payload?.snapshotId,
+        )
+      )
+        throw new Error('Hosted snapshot event was not reconciled.');
+    }
+    const snapshot = snapshots[0];
+    if (
+      !snapshot ||
+      typeof snapshot.id !== 'string' ||
+      typeof snapshot.version_id !== 'string' ||
+      typeof snapshot.storage_key !== 'string' ||
+      typeof snapshot.checksum !== 'string' ||
+      Number(snapshot.through_cursor) < Number(persistedOperations[0].cursor)
+    )
+      throw new Error('Hosted append-only snapshot ledger is invalid.');
+    const versions = await ledgerRows(
+      supabaseUrl,
+      secretKey,
+      'cloud_scenario_versions',
+      {
+        scenario_id: `eq.${scenarioId}`,
+        id: `eq.${snapshot.version_id}`,
+        select: 'id,parent_version_id,content_checksum,storage_key',
+      },
+    );
+    if (
+      versions.length !== 1 ||
+      versions[0]?.content_checksum !== snapshot.checksum ||
+      versions[0]?.storage_key !== snapshot.storage_key
+    )
+      throw new Error('Hosted snapshot and cloud version do not match.');
+    const snapshotBytes = await storedObject(
+      supabaseUrl,
+      secretKey,
+      snapshot.storage_key,
+    );
+    if (
+      createHash('sha256').update(snapshotBytes).digest('hex') !==
+      snapshot.checksum
+    )
+      throw new Error('Hosted private snapshot checksum does not match.');
+    const snapshotDocument = JSON.parse(
+      new TextDecoder().decode(snapshotBytes),
+    );
+    if (snapshotDocument?.formatVersion !== 1)
+      throw new Error('Hosted private snapshot format is invalid.');
+
     const ownerConnectionId = inputs.owner.connection.connectionId;
     await disconnect(inputs.owner, ownerConnectionId);
     connections.splice(
@@ -485,6 +606,8 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
       presenceRoles: roles.size,
       polledEvents: events.length,
       ledgerOperations: persistedOperations.length,
+      compactionStatus,
+      snapshotVersions: versions.length,
       resumedCursor: resumed.cursor,
     };
   } finally {
@@ -506,6 +629,9 @@ async function run() {
   console.log(`monotone catch-up verified (${result.polledEvents} event(s))`);
   console.log(
     `append-only Supabase ledger verified (${result.ledgerOperations} operation)`,
+  );
+  console.log(
+    `private snapshot ${result.compactionStatus}; cloud version verified (${result.snapshotVersions})`,
   );
   console.log(
     `disconnect and cursor resume verified (${result.resumedCursor})`,

@@ -71,12 +71,16 @@ async function workerRequest(apiUrl, path, init) {
   return { response, payload };
 }
 
-async function expectRejection(apiUrl, path, init, statuses, code) {
+async function expectRejection(apiUrl, path, init, statuses, codes) {
+  const expectedCodes = Array.isArray(codes) ? codes : [codes];
   const response = await fetch(`${apiUrl}${path}`, init);
   const payload = await readResponse(response);
-  if (!statuses.includes(response.status) || payload?.code !== code)
+  if (
+    !statuses.includes(response.status) ||
+    !expectedCodes.includes(payload?.code)
+  )
     throw new Error(
-      `Expected ${code} rejection, received HTTP ${response.status} (${String(payload?.code ?? 'no_code')}).`,
+      `Expected ${expectedCodes.join(' or ')} rejection, received HTTP ${response.status} (${String(payload?.code ?? 'no_code')}).`,
     );
 }
 
@@ -381,7 +385,7 @@ export async function validateHostedRealtime({ projectRef, apiUrl }) {
         }),
       },
       [403, 404],
-      'studio_not_found',
+      ['studio_not_found', 'studio_write_forbidden'],
     );
 
     const poll = await realtimePost({

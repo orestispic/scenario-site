@@ -1,4 +1,5 @@
 export const API_ROUTES = new Set([
+  '/v11/catalog',
   '/v10/projects/:id/metadata',
   '/v9/projects',
   '/v9/projects/:id/sharing',

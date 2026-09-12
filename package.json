@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vite build --config vite.vercel.config.ts",
+    "build:beta": "vite build --config vite.vercel.config.ts --mode phase9",
+    "release:check": "node scripts/phase11-readiness.mjs",
+    "phase11:health": "node scripts/phase11-healthcheck.mjs",
     "test:api": "node --experimental-transform-types --test worker/tests/*.test.ts tests/*.test.ts",
     "test:security": "node scripts/security-check.mjs",
     "typecheck": "tsc --noEmit --incremental false",

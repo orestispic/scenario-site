@@ -8,7 +8,7 @@ const roots = appMode
       '../scenario-app-commercial/src',
       '../scenario-app-commercial/src-tauri/src',
     ]
-  : ['worker/src', 'lib', 'app', 'supabase', 'scripts'];
+  : ['worker/src', 'lib', 'app', 'src', 'supabase', 'scripts'];
 let files = 0;
 async function scan(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -32,7 +32,7 @@ async function scan(directory) {
       `Provider secret: ${path}`,
     );
     if (
-      /^(app|lib)[\\/]/.test(path) ||
+      /^(app|lib|src)[\\/]/.test(path) ||
       (appMode && path.includes('commercial'))
     ) {
       assert.ok(

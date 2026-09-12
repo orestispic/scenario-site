@@ -844,6 +844,26 @@ export function createCommercialWorker(
         )
           throw new ApiError(415, 'json_required', 'Corps JSON requis.');
 
+        if (url.pathname === '/v11/catalog') {
+          if (request.method !== 'GET')
+            throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          const offers = await dependencies.billingRepository.listOffers();
+          // Deliberate projection: never expose provider IDs, accounts or rights.
+          status = 200;
+          return jsonResponse({
+            contractVersion: '2026-09-v11',
+            environment: dependencies.environment,
+            testMode: true,
+            offers: offers.filter((offer) => offer.testMode).map((offer) => ({
+              selectionId: offer.selectionId, offerCode: offer.offerCode,
+              displayName: offer.displayName, description: offer.description,
+              billingInterval: offer.billingInterval, currency: offer.currency,
+              unitAmountMinor: offer.unitAmountMinor, testMode: true,
+            })),
+            request_id: requestId,
+          }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
         if (request.method === 'GET' && url.pathname === '/v1/config') {
           const [configuration, publicKey] = await Promise.all([
             dependencies.repository.getConfiguration(),

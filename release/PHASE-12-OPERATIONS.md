@@ -25,6 +25,9 @@ Les pages du site sont des informations provisoires de bêta, pas des CGV valid�
    des clics ; vérifier qu'aucun fournisseur ne réécrit le lien de manière sensible.
    En préproduction, chaque URL Vercel temporaire doit être explicitement ajoutée
    aux origines du Worker ; `senario.app` fournit l'origine stable prévue ensuite.
+   Le 13 septembre 2026, le SMTP Zoho, la confirmation explicite, la récupération
+   de mot de passe et la connexion suivante ont été validés de bout en bout avec
+   `support@senario.app` sur la preview `5f9`, après correction de son origine CORS.
 5. Avec deux boîtes contrôlées : inscription, confirmation explicite, double clic,
    lien consommé/expiré, récupération, mauvais destinataire, changement de mot de
    passe puis connexion avec le nouveau. Ne pas comptabiliser les tests interceptés

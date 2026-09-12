@@ -133,3 +133,50 @@ Aucun objet n'est réécrit ni complété avec des commentaires plus récents. U
 nouveau snapshot conserve le contrôle du parent courant. Test unitaire étendu
 pour vérifier « objet, SQL, SQL » sans seconde écriture objet ; 128 tests OK.
 Cette correction ne modifie aucun contrat ni migration déjà appliquée.
+
+### Validation hébergée finale réussie
+
+Worker corrigé `9a0d2fc`, Cloudflare `cf8f3ef8-f4ff-4631-ae05-bfaf85d99462`,
+uniquement `scenario-commercial-api-preproduction`. Migration 20260924000000
+installée uniquement sur `zblnsdyaoljnezxdidtx`. Application locale `50a077b`.
+
+Deuxième exécution complète du script hébergé réussie :
+
+- vrai seed issu du fichier privé et lecture par trois comptes synthétiques ;
+- écritures simultanées de champs distincts, conflit du même champ, réponse,
+  replay sans doublon et refus d'un corps différent avec même clé ;
+- refus d'écriture viewer et refus de lecture/replay après révocation editor ;
+- opérations texte Owner/Editor sur le vrai canal, journal/poll vérifiés ;
+- snapshot privé contenant les deux éditions de texte, garde et réponses,
+  parent explicite, révision de métadonnées et SHA-256 contrôlés ;
+- seconde compaction identique acceptée, ancien objet inchangé après suppression
+  ultérieure du commentaire (checksum revérifié par téléchargement).
+
+Les deux essais ont chacun créé un seul projet synthétique, ensuite placé en
+corbeille (récupérable), historique append-only conservé. Sessions de test fermées
+avec scope local ; aucun scénario utilisateur modifié. Pas de push Git, changement
+de dépôt source/main/mac, publication production, paiement ou appel IA.
+
+Commandes externes effectivement exécutées :
+
+```powershell
+.\node_modules\.bin\supabase.cmd migration list --linked
+.\node_modules\.bin\supabase.cmd migration up --linked
+.\node_modules\.bin\supabase.cmd db lint --linked --level error
+.\node_modules\.bin\wrangler.cmd deploy --config wrangler.preproduction.toml
+node scripts/validate-hosted-project-metadata.mjs --execute
+```
+
+Worker compilé à blanc avant chaque déploiement. Suite API complète relancée
+après correction : 128 réussites. Lint ciblé additionnel sur
+`worker/src/collaborationLedger.ts` et `worker/tests/collaboration-ledger.test.ts`,
+typecheck, tests de ce fichier et scans sécurité relancés avec succès.
+Test Edge phase10 historique relancé avec succès (privé, partage, autosync,
+connexion automatique, fenêtre responsive), sans toucher aux onglets utilisateur.
+
+Limites non prétendues validées : charge prolongée, panne réelle injectée,
+installation native signée et coffre système interactif. Les cas réseau incertain,
+annulation, copie hors ligne et conflits sont couverts localement ; aucun essai de
+panne destructrice sur l'infrastructure partagée. La validation hébergée porte
+sur l'API, SQL, canal et stockage ; l'interface trois comptes est validée contre
+l'adaptateur local isolé. Les contrats et captures historiques restent immuables.

@@ -58,7 +58,7 @@ export class SupabaseRestRepository implements CommercialRepository {
       '/rest/v1/offer_configuration_versions?status=eq.active&select=version_number&order=effective_at.desc&limit=1',
     );
     const offers = await this.read<unknown[]>(
-      '/rest/v1/offer_configuration_items?is_visible=eq.true&select=*,offers(offer_code),offer_entitlements(*),offer_quotas(*)&order=price_minor.asc',
+      '/rest/v1/offer_configuration_items?is_visible=eq.true&select=*,offers!inner(offer_code),offer_configuration_versions!inner(status)&offer_configuration_versions.status=eq.active&order=price_minor.asc',
     );
     const compatibility = await this.read<DatabaseCompatibility[]>(
       '/rest/v1/client_compatibility_rules?select=minimum_supported_version,effective_at,message&order=effective_at.desc',
@@ -214,13 +214,49 @@ export class SupabaseRestRepository implements CommercialRepository {
   });
 
   private async read<T>(path: string): Promise<T> {
-    const response = await this.fetcher(
-      `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
-      { headers: this.serviceHeaders() },
-    );
-    if (!response.ok)
+    const endpoint = path.split('?')[0] ?? 'unknown';
+    let response: Response;
+    try {
+      const fetcher = this.fetcher;
+      response = await fetcher(
+        `${this.environment.SUPABASE_URL.replace(/\/$/, '')}${path}`,
+        { headers: this.serviceHeaders() },
+      );
+    } catch {
+      console.warn(
+        JSON.stringify({
+          event: 'supabase.read_failed',
+          endpoint,
+          status: 0,
+          reason: 'network',
+        }),
+      );
+      throw new RepositoryError('Database read failed (network)');
+    }
+    if (!response.ok) {
+      console.warn(
+        JSON.stringify({
+          event: 'supabase.read_failed',
+          endpoint,
+          status: response.status,
+          reason: 'response',
+        }),
+      );
       throw new RepositoryError(`Database read failed (${response.status})`);
-    return response.json() as Promise<T>;
+    }
+    try {
+      return (await response.json()) as T;
+    } catch {
+      console.warn(
+        JSON.stringify({
+          event: 'supabase.read_failed',
+          endpoint,
+          status: response.status,
+          reason: 'invalid_json',
+        }),
+      );
+      throw new RepositoryError('Database read failed (invalid response)');
+    }
   }
 
   private async write<T = unknown>(

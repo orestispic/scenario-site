@@ -2,12 +2,12 @@ name = "scenario-commercial-api-preproduction"
 main = "worker/src/index.ts"
 compatibility_date = "2026-05-22"
 compatibility_flags = ["nodejs_compat"]
-workers_dev = false
+workers_dev = true
 preview_urls = false
 
 [vars]
 SCENARIO_ENVIRONMENT = "staging"
-API_ALLOWED_ORIGINS = "https://preproduction.example.invalid,tauri://localhost,http://tauri.localhost"
+API_ALLOWED_ORIGINS = "http://127.0.0.1:1420,http://localhost:1420,tauri://localhost,http://tauri.localhost"
 RATE_LIMIT_MAX_REQUESTS = "60"
 RATE_LIMIT_WINDOW_SECONDS = "60"
 STRIPE_WEBHOOK_TOLERANCE_SECONDS = "300"
@@ -57,6 +57,6 @@ invocation_logs = false
 # Supply separate Supabase TEST, Stripe TEST and signing secrets through the
 # secret manager, including CLOUD_IDEMPOTENCY_PEPPER and
 # STUDIO_INVITATION_PEPPER and STUDIO_TICKET_PEPPER. The notification
-# provider and STUDIO_REALTIME_CHANNEL binding remain deliberately
-# unconfigured until isolated test infrastructure exists. No production
-# route, account_id or resource is configured.
+# notification provider remains deliberately unconfigured until isolated test
+# infrastructure exists. No custom production route, account_id or production
+# resource is configured.

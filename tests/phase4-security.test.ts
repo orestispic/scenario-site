@@ -57,5 +57,7 @@ test('phase 4 RPCs keep least privilege, ordering and revocation checks', async 
   );
   assert.match(config, /SCENARIO_ENVIRONMENT = "staging"/);
   assert.match(config, /new_sqlite_classes = \["RateLimitBucket"\]/);
-  assert.match(config, /workers_dev = false/);
+  assert.match(config, /workers_dev = true/);
+  assert.match(config, /preview_urls = false/);
+  assert.match(config, /http:\/\/127\.0\.0\.1:1420/);
 });

@@ -26,6 +26,16 @@ export class AiProviderError extends Error {
   }
 }
 
+export class UnavailableAiProvider implements AiProvider {
+  async execute(): Promise<AiProviderResult> {
+    throw new AiProviderError(
+      'definitive',
+      'ai_provider_unavailable',
+      'Le fournisseur IA de test n’est pas configuré.',
+    );
+  }
+}
+
 type OpenAiConfiguration = {
   apiKey: string;
   shortActionModel: string;

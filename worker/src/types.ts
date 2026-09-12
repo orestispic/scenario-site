@@ -9,7 +9,7 @@ import type {
 import type { EntitlementSnapshot } from '../../lib/commercial/contracts.ts';
 import type { BillingRepository } from './billing.ts';
 import type { StripeGateway } from './stripe.ts';
-import type { StripeWebhookVerifier } from './stripeWebhook.ts';
+import type { StripeWebhookVerifierPort } from './stripeWebhook.ts';
 import type { LimiterNamespace } from './distributedRateLimit.ts';
 import type { Telemetry } from './observability.ts';
 import type { AiProvider } from './aiProvider.ts';
@@ -40,13 +40,13 @@ export interface WorkerEnvironment {
   RATE_LIMIT_WINDOW_SECONDS?: string;
   RATE_LIMITER: LimiterNamespace;
   RATE_LIMIT_KEY_PEPPER: string;
-  STRIPE_SECRET_KEY: string;
-  STRIPE_WEBHOOK_SECRET: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   STRIPE_WEBHOOK_TOLERANCE_SECONDS?: string;
   ACTIVATION_KEY_PEPPER: string;
-  OPENAI_API_KEY: string;
-  OPENAI_SHORT_ACTION_MODEL: string;
-  OPENAI_PDF_IMPORT_MODEL: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_SHORT_ACTION_MODEL?: string;
+  OPENAI_PDF_IMPORT_MODEL?: string;
   AI_PROVIDER_TIMEOUT_MS?: string;
   AI_SHORT_MAX_BODY_BYTES?: string;
   AI_PDF_MAX_BODY_BYTES?: string;
@@ -157,7 +157,7 @@ export type WorkerDependencies = {
   activationKeyPepper: string;
   billingRepository: BillingRepository;
   stripeGateway: StripeGateway;
-  stripeWebhookVerifier: StripeWebhookVerifier;
+  stripeWebhookVerifier: StripeWebhookVerifierPort;
   aiProvider?: AiProvider;
   aiQuotaRepository?: AiQuotaRepository;
   aiIdempotencyPepper?: string;

@@ -24,6 +24,16 @@ export interface StripeGateway {
   }): Promise<{ url: string }>;
 }
 
+export class UnavailableStripeGateway implements StripeGateway {
+  async createCheckoutSession(): Promise<StripeCheckoutResult> {
+    throw new Error('Stripe test provider is not configured.');
+  }
+
+  async createPortalSession(): Promise<{ url: string }> {
+    throw new Error('Stripe test provider is not configured.');
+  }
+}
+
 function stripeForm(values: Record<string, string>): string {
   const form = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) form.set(key, value);

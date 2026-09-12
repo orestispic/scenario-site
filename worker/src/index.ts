@@ -7,9 +7,12 @@ import { SupabaseRestRepository } from './supabaseRepository.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { createCommercialWorker } from './worker.ts';
 import { SupabaseBillingRepository } from './billing.ts';
-import { StripeRestGateway } from './stripe.ts';
-import { StripeWebhookVerifier } from './stripeWebhook.ts';
-import { OpenAiResponsesProvider } from './aiProvider.ts';
+import { StripeRestGateway, UnavailableStripeGateway } from './stripe.ts';
+import {
+  StripeWebhookVerifier,
+  UnavailableStripeWebhookVerifier,
+} from './stripeWebhook.ts';
+import { OpenAiResponsesProvider, UnavailableAiProvider } from './aiProvider.ts';
 import { SupabaseAiQuotaRepository } from './aiQuota.ts';
 import {
   SupabaseCloudScenarioRepository,
@@ -17,6 +20,7 @@ import {
 } from './cloudSync.ts';
 import { SupabaseStudioRepository } from './studio.ts';
 import { CloudflareRealtimeTransport } from './realtimeCollaboration.ts';
+import { normalizeHostedSupabaseUrl } from './supabaseAdmin.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -52,12 +56,36 @@ const productionWorker = {
         'The production Worker entry point cannot run the local-test environment.',
       );
     }
-    if (
-      !/^sk_test_[A-Za-z0-9_]+$/.test(
-        required(environment, 'STRIPE_SECRET_KEY'),
-      )
-    )
+    const stripeSecretKey = environment.STRIPE_SECRET_KEY?.trim();
+    const stripeWebhookSecret = environment.STRIPE_WEBHOOK_SECRET?.trim();
+    const stripeConfigured = Boolean(stripeSecretKey && stripeWebhookSecret);
+    if (Boolean(stripeSecretKey) !== Boolean(stripeWebhookSecret))
+      throw new Error('Incomplete Stripe test configuration.');
+    if (stripeSecretKey && !/^sk_test_[A-Za-z0-9_]+$/.test(stripeSecretKey))
       throw new Error('Stripe test key required');
+
+    const openAiApiKey = environment.OPENAI_API_KEY?.trim();
+    const openAiShortModel = environment.OPENAI_SHORT_ACTION_MODEL?.trim();
+    const openAiPdfModel = environment.OPENAI_PDF_IMPORT_MODEL?.trim();
+    const aiConfigured = Boolean(
+      openAiApiKey && openAiShortModel && openAiPdfModel,
+    );
+    if (
+      [openAiApiKey, openAiShortModel, openAiPdfModel].filter(Boolean).length !==
+      (aiConfigured ? 3 : 0)
+    )
+      throw new Error('Incomplete AI test configuration.');
+    if (environment.SCENARIO_ENVIRONMENT === 'production') {
+      if (!stripeConfigured)
+        throw new Error('Stripe test configuration required.');
+      if (!aiConfigured) throw new Error('AI provider configuration required.');
+    }
+    const runtimeEnvironment: WorkerEnvironment = {
+      ...environment,
+      SUPABASE_URL: normalizeHostedSupabaseUrl(
+        required(environment, 'SUPABASE_URL'),
+      ),
+    };
     let runtime = runtimes.get(environment);
     if (!runtime) {
       const maximumRequests = Number(
@@ -73,9 +101,6 @@ const productionWorker = {
           required(environment, 'OFFLINE_GRANT_PUBLIC_JWK'),
         ) as JsonWebKey,
       );
-      const stripeSecretKey = required(environment, 'STRIPE_SECRET_KEY');
-      if (!stripeSecretKey.startsWith('sk_test_'))
-        throw new Error('Phase 3 accepts Stripe test keys only.');
       let realtimeTransport;
       if (environment.STUDIO_REALTIME_CHANNEL) {
         required(environment, 'STUDIO_TICKET_PEPPER');
@@ -89,9 +114,9 @@ const productionWorker = {
           .split(',')
           .map((origin) => origin.trim())
           .filter(Boolean),
-        repository: new SupabaseRestRepository(environment),
+        repository: new SupabaseRestRepository(runtimeEnvironment),
         tokenVerifier: new SupabaseJwksTokenVerifier(
-          environment.SUPABASE_URL,
+          runtimeEnvironment.SUPABASE_URL,
           environment.SUPABASE_JWT_AUDIENCE,
         ),
         offlineGrantSigner: signer,
@@ -106,24 +131,30 @@ const productionWorker = {
           'DEVICE_FINGERPRINT_PEPPER',
         ),
         activationKeyPepper: required(environment, 'ACTIVATION_KEY_PEPPER'),
-        billingRepository: new SupabaseBillingRepository(environment),
-        stripeGateway: new StripeRestGateway(stripeSecretKey),
-        stripeWebhookVerifier: new StripeWebhookVerifier(
-          required(environment, 'STRIPE_WEBHOOK_SECRET'),
-          Number(environment.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300),
-        ),
-        aiProvider: new OpenAiResponsesProvider({
-          apiKey: required(environment, 'OPENAI_API_KEY'),
-          shortActionModel: required(environment, 'OPENAI_SHORT_ACTION_MODEL'),
-          pdfImportModel: required(environment, 'OPENAI_PDF_IMPORT_MODEL'),
-          timeoutMs: boundedInteger(
-            environment.AI_PROVIDER_TIMEOUT_MS,
-            90_000,
-            1_000,
-            300_000,
-          ),
-        }),
-        aiQuotaRepository: new SupabaseAiQuotaRepository(environment),
+        billingRepository: new SupabaseBillingRepository(runtimeEnvironment),
+        stripeGateway: stripeConfigured
+          ? new StripeRestGateway(stripeSecretKey!)
+          : new UnavailableStripeGateway(),
+        stripeWebhookVerifier: stripeConfigured
+          ? new StripeWebhookVerifier(
+              stripeWebhookSecret!,
+              Number(environment.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300),
+            )
+          : new UnavailableStripeWebhookVerifier(),
+        aiProvider: aiConfigured
+          ? new OpenAiResponsesProvider({
+              apiKey: openAiApiKey!,
+              shortActionModel: openAiShortModel!,
+              pdfImportModel: openAiPdfModel!,
+              timeoutMs: boundedInteger(
+                environment.AI_PROVIDER_TIMEOUT_MS,
+                90_000,
+                1_000,
+                300_000,
+              ),
+            })
+          : new UnavailableAiProvider(),
+        aiQuotaRepository: new SupabaseAiQuotaRepository(runtimeEnvironment),
         aiIdempotencyPepper: required(environment, 'AI_IDEMPOTENCY_PEPPER'),
         aiPolicy: {
           shortMaxBodyBytes: boundedInteger(
@@ -151,9 +182,9 @@ const productionWorker = {
             4_194_304,
           ),
         },
-        cloudRepository: new SupabaseCloudScenarioRepository(environment),
+        cloudRepository: new SupabaseCloudScenarioRepository(runtimeEnvironment),
         scenarioStorage: new SupabaseScenarioObjectStorage(
-          environment,
+          runtimeEnvironment,
           environment.CLOUD_STORAGE_BUCKET ?? 'scenario-documents',
         ),
         cloudIdempotencyPepper: required(
@@ -174,7 +205,7 @@ const productionWorker = {
             900,
           ),
         },
-        studioRepository: new SupabaseStudioRepository(environment),
+        studioRepository: new SupabaseStudioRepository(runtimeEnvironment),
         studioInvitationPepper: required(
           environment,
           'STUDIO_INVITATION_PEPPER',

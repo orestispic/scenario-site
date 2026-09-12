@@ -1,5 +1,25 @@
 import type { WorkerEnvironment } from './types.ts';
 
+export function normalizeHostedSupabaseUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error('Supabase URL is invalid.');
+  }
+  if (
+    url.protocol !== 'https:' ||
+    !url.hostname.endsWith('.supabase.co') ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  )
+    throw new Error('Hosted Supabase HTTPS URL required.');
+  return url.origin;
+}
+
 export function resolveSupabaseAdminKey(
   environment: Pick<
     WorkerEnvironment,

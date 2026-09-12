@@ -14,6 +14,13 @@ export interface VerifiedStripeEvent {
   data: { object: Record<string, unknown> };
 }
 
+export interface StripeWebhookVerifierPort {
+  verify(
+    rawBody: string,
+    signatureHeader: string | null,
+  ): Promise<VerifiedStripeEvent>;
+}
+
 export class StripeWebhookError extends Error {}
 
 function toHex(bytes: ArrayBuffer): string {
@@ -50,7 +57,7 @@ export async function signStripeFixture(
   return `t=${timestamp},v1=${toHex(signature)}`;
 }
 
-export class StripeWebhookVerifier {
+export class StripeWebhookVerifier implements StripeWebhookVerifierPort {
   constructor(
     private readonly secret: string,
     private readonly toleranceSeconds = STRIPE_WEBHOOK_TOLERANCE_SECONDS,
@@ -124,5 +131,13 @@ export class StripeWebhookVerifier {
       );
     }
     return event as VerifiedStripeEvent;
+  }
+}
+
+export class UnavailableStripeWebhookVerifier
+  implements StripeWebhookVerifierPort
+{
+  async verify(): Promise<VerifiedStripeEvent> {
+    throw new StripeWebhookError('Stripe test webhook is not configured.');
   }
 }

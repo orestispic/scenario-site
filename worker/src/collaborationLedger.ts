@@ -9,6 +9,8 @@ import {
   type ScenarioObjectStorage,
 } from './cloudSync.ts';
 import type { StudioContext } from './studio.ts';
+import type { ProjectMetadataRepository } from './projectMetadata.ts';
+import { metadataFromRegisters } from '../../lib/commercial/contracts-v10.ts';
 import type { WorkerEnvironment } from './types.ts';
 import { CommercialRepositoryError } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
@@ -360,6 +362,7 @@ export class SupabaseCollaborationSnapshotPersistence implements CollaborationSn
     private readonly storage: ScenarioObjectStorage,
     private readonly storageKeyPepper: string,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly metadata?: ProjectMetadataRepository,
   ) {}
 
   async persist(
@@ -398,10 +401,15 @@ export class SupabaseCollaborationSnapshotPersistence implements CollaborationSn
       input.parentVersionId,
     );
     const parentBytes = await this.storage.get(parentKey);
-    const snapshotBytes = mergeCollaborationSnapshot(
+    let snapshotBytes = mergeCollaborationSnapshot(
       parentBytes,
       input.artifact,
     );
+    if (this.metadata) {
+      const state=await this.metadata.forSnapshot({context:input.context,scenarioId:scenario.id,requestId:input.requestId,snapshotId:input.channel.snapshotId});
+      snapshotBytes=new TextEncoder().encode(JSON.stringify({...JSON.parse(new TextDecoder().decode(snapshotBytes)),...metadataFromRegisters(state.registers),projectMetadataRevision:state.revision}));
+      if(snapshotBytes.length>4194304) throw new CommercialRepositoryError(413,'project_metadata_invalid','Snapshot trop volumineux.');
+    }
     const checksum = await sha256(snapshotBytes);
     const accountScope = await hmac(
       input.context.profileId,

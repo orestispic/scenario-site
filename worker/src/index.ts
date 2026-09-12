@@ -1,6 +1,7 @@
 import { SupabaseJwksTokenVerifier } from './jwt.ts';
 import { EcdsaOfflineGrantSigner } from './offlineGrant.ts';
 import { DistributedRateLimiter } from './distributedRateLimit.ts';
+import { SupabaseProjectMetadataRepository } from './projectMetadata.ts';
 export { RateLimitBucket } from './distributedRateLimit.ts';
 export { StudioRealtimeChannel } from './studioRealtimeChannel.ts';
 import { SupabaseRestRepository } from './supabaseRepository.ts';
@@ -122,6 +123,7 @@ const productionWorker = {
         'CLOUD_IDEMPOTENCY_PEPPER',
       );
       let realtimeTransport;
+      const metadataRepository = new SupabaseProjectMetadataRepository(runtimeEnvironment, cloudRepository, scenarioStorage);
       if (environment.STUDIO_REALTIME_CHANNEL) {
         required(environment, 'STUDIO_TICKET_PEPPER');
         realtimeTransport = new ReconciledRealtimeTransport(
@@ -132,6 +134,8 @@ const productionWorker = {
             cloudRepository,
             scenarioStorage,
             cloudIdempotencyPepper,
+            fetch,
+            metadataRepository,
           ),
         );
       }
@@ -160,6 +164,7 @@ const productionWorker = {
           windowSeconds * 1_000,
         ),
         projectRepository: new SupabaseCloudProjectRepository(runtimeEnvironment),
+        metadataRepository,
         deviceFingerprintPepper: required(
           environment,
           'DEVICE_FINGERPRINT_PEPPER',

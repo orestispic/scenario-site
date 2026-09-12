@@ -22,6 +22,7 @@ import {
 } from './studio.ts';
 import { DeterministicLocalRealtimeTransport } from './realtimeCollaboration.ts';
 import { LocalCloudProjectRepository } from './cloudProjects.ts';
+import { LocalProjectMetadataRepository } from './projectMetadata.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -58,6 +59,7 @@ export async function createLocalRuntime(
     },
     now,
   );
+  const metadataRepository = new LocalProjectMetadataRepository(cloudRepository, scenarioStorage, studioRepository);
   const worker = createCommercialWorker({
     environment: 'test',
     allowedOrigins: [
@@ -98,12 +100,14 @@ export async function createLocalRuntime(
     studioRepository,
     studioNotifier,
     projectRepository: new LocalCloudProjectRepository(cloudRepository, studioRepository),
+    metadataRepository,
     studioInvitationPepper: 'ephemeral-local-studio-invitation-pepper',
     studioPolicy: { invitationTtlSeconds: 86_400, eventPageSize: 100 },
     realtimeTransport,
     ...overrides,
   });
   return {
+    metadataRepository,
     repository,
     auth,
     billing,

@@ -1,4 +1,5 @@
 import type { OfflineGrantPayload } from '../../lib/commercial/contracts-v2.ts';
+import { validateMetadataWrite } from '../../lib/commercial/contracts-v10.ts';
 import { AuthenticationError } from './jwt.ts';
 import {
   CommercialRepositoryError,
@@ -935,6 +936,23 @@ export function createCommercialWorker(
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
         }
 
+        if (normalizedRoute === '/v10/projects/:id/metadata') {
+          if (!dependencies.metadataRepository) throw new ApiError(503, 'project_metadata_unavailable', 'Commentaires et premières pages indisponibles.');
+          if (!['GET','POST'].includes(request.method)) throw new ApiError(405,'method_not_allowed','Méthode refusée.');
+          const headers=readCloudHeaders(request,request.method==='POST');
+          const context:StudioContext={profileId:profile.id,emailHash:'',displayName:'',fingerprintHash:await hashFingerprint(headers.deviceFingerprint,dependencies.deviceFingerprintPepper),platform:headers.platform,clientVersion:headers.clientVersion};
+          const input={context,scenarioId:uuid(url.pathname.split('/')[3]),requestId};
+          let value;
+          if(request.method==='POST') {
+            let write;
+            try {write=validateMetadataWrite(await readObjectBody(request,131072));}
+            catch {throw new ApiError(400,'project_metadata_invalid','Commentaires ou premières pages invalides.');}
+            value=await dependencies.metadataRepository.write({...input,write});
+          } else value=await dependencies.metadataRepository.read(input);
+          status=200; studio=request.method==='POST'?'mutated':'listed';
+          if(value.status==='conflict') cloud='conflict';
+          return jsonResponse({contractVersion:'2026-09-v10',...value,request_id:requestId},status,requestId,origin,dependencies.allowedOrigins);
+        }
         if (normalizedRoute.startsWith('/v9/')) {
           if (!dependencies.projectRepository || !dependencies.studioInvitationPepper)
             throw new ApiError(503, 'projects_unconfigured', 'Projets cloud indisponibles.');

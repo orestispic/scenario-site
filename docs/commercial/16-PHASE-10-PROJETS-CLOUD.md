@@ -1,5 +1,8 @@
 # Phase 10 — API projets et fiabilisation du journal
 
+La limite initiale couverture/commentaires décrite plus bas est levée par
+`17-PROJECT-COMMENTS-FRONT-MATTER.md` (contrat distinct v10).
+
 ## Modèle et protocole
 
 Un projet correspond à `cloud_scenarios`, avec versions v6 append-only et fichiers

@@ -148,6 +148,7 @@ export class CommercialRepositoryError extends Error {
 }
 
 export type WorkerDependencies = {
+  metadataRepository?: import('./projectMetadata.ts').ProjectMetadataRepository;
   projectRepository?: import('./cloudProjects.ts').CloudProjectRepository;
   ingressRateLimiter?: RateLimiter;
   telemetry?: Telemetry;

@@ -102,19 +102,100 @@ de secrets (plateforme et application) et la compilation Worker à blanc. Les
 anciens fichiers de migration restent inchangés. Le client passe 82 tests et son
 build préproduction est vérifié séparément.
 
-La validation hébergée de 120 secondes a reproduit le blocage existant ; elle
-n'est pas un succès post-correction. La migration 20260922000000 et le Worker
-corrigé **ne sont pas encore appliqués/déployés**. La demande d'exécution
-`migration up --linked` a été refusée par le contrôle automatique, qui cite
-l'ancienne restriction à Supabase local et le risque d'appliquer plusieurs
-migrations. Une autorisation explicite ciblant cette migration et le Worker de
-préproduction est requise avant de poursuivre. Le contrôle transactionnel annulé
-n'a conservé aucun changement. Le moteur Docker local n'est pas disponible.
+La validation hébergée initiale de 120 secondes avait reproduit le blocage ; elle
+n'était pas un succès post-correction. Le premier refus du contrôle automatique
+(ancienne restriction à Supabase local) a ensuite été levé par l'autorisation
+explicite de l'utilisateur pour cette migration, ce commit et les tests.
 
-Après cette autorisation : revérifier que seule 20260922000000 est en attente,
-appliquer la migration, vérifier son inscription, déployer le commit testé sur
-`scenario-commercial-api-preproduction`, puis exécuter un premier passage de
-réconciliation et un test neuf de stabilité de 120 secondes avec le vrai client.
-Le succès exige zéro erreur, une connexion par compte, des lectures et heartbeats
-continus, et la fermeture des seules sessions du diagnostic. Ne pas déclencher
-le logout global des comptes interactifs.
+## Application et validation réelles après autorisation
+
+Le worktree plateforme était propre sur `6ebd21ce590551fd2060997aad199cc2482b31ce`
+et le projet lié était exactement `zblnsdyaoljnezxdidtx`. La liste distante montrait
+une seule migration en attente : `20260922000000`. Elle a été appliquée avec
+`supabase migration up --linked`, sans `db push`.
+
+Contrôle SQL après application : migration inscrite, ancienne unicité de séquence
+absente, index de recherche présent, RLS toujours activée et contraintes uniques
+`(studio_id, cursor)` et `(studio_id, operation_id)` conservées. Un compteur SQL
+agrégé confirme qu'un groupe de séquences réutilisées est désormais persisté ;
+aucun texte ni identité n'a été affiché.
+
+Le commit autorisé `6ebd21c` a été déployé sur
+`scenario-commercial-api-preproduction`. Version Cloudflare retournée :
+`bee273c7-bde7-4509-aa02-ee1a2cf7f016`. Wrangler a signalé la différence de
+configuration distante `observability.redact_query_string: false` ; le déploiement
+a utilisé la configuration préproduction du commit. Aucun secret n'a été remplacé.
+
+Le premier passage post-déploiement de 120 secondes reste **en échec strict** :
+deux réponses `collaboration_ledger_incomplete` pour owner pendant le rattrapage
+initial. Après connexion de l'editor et réparation des opérations de leur propre
+auteur, les trois clients sont restés stables, sans nouvelle connexion. Compteurs
+finaux owner/editor/viewer : lectures 31/29/29, heartbeats 11/11/11, une connexion
+par rôle. Ce passage de récupération ne compte pas comme test sans erreur.
+
+Le test hébergé rapide a ensuite réussi : présence des trois rôles, ticket à usage
+unique, refus d'écriture viewer, opération existante rejouée et dédupliquée,
+rattrapage monotone de 51 événements, une seule ligne SQL pour l'opération test,
+snapshot privé existant vérifié par checksum et version cloud, déconnexion et
+reprise au curseur 51. Il n'a pas créé de nouveau snapshot ni validé une nouvelle
+compaction. Il ferme uniquement ses propres canaux et sessions Supabase locales.
+
+Le nouveau test `node scripts/realtime-soak.mjs 300` a **réussi** (code de sortie
+0) : cinq minutes avec le vrai client applicatif et les trois comptes, aucune
+erreur HTTP, aucun statut de reconnexion et une seule connexion par compte.
+Chacun a effectué 71 lectures et 29 heartbeats. Owner/editor sont restés `online`,
+viewer `read_only`. Le client testé est celui du commit application `46290ce`.
+Ces résultats sont des validations réelles du Worker/Supabase de préproduction,
+pas des simulations ni une compilation à blanc. Le module corrigé servi par Vite
+sur `http://127.0.0.1:1420/src/commercial/collaborationClient.ts` a aussi été vérifié
+(HTTP 200 et présence des gardes de génération/récupération/espacement des polls).
+
+Portée : le soak ne soumet pas de nouvelle édition et n'est pas un test de charge,
+de veille navigateur, de coupure réseau injectée ou de durée supérieure à cinq
+minutes. Les limites de double écriture et de fusion de blocs décrites plus haut
+demeurent ; ce résultat ne vaut pas garantie générale de disponibilité en
+production. Aucun code supplémentaire n'a été modifié après le déploiement :
+les commits de compte rendu suivants ne changent que la documentation.
+
+Commandes exécutées pour cette application (depuis le worktree plateforme, sauf
+le soak lancé depuis le worktree application) :
+
+```powershell
+git status --short --branch
+git rev-parse HEAD
+Get-Content supabase/.temp/project-ref
+.\node_modules\.bin\supabase.cmd migration list --linked
+.\node_modules\.bin\supabase.cmd migration up --linked
+.\node_modules\.bin\wrangler.cmd deploy --config wrangler.preproduction.toml
+node scripts/realtime-soak.mjs 120
+npm.cmd run phase9:realtime:validate -- --project-ref zblnsdyaoljnezxdidtx --api-url https://scenario-commercial-api-preproduction.ore-picard.workers.dev
+node scripts/realtime-soak.mjs 300
+git diff --check
+```
+
+Les contrôles de schéma ont été exécutés avec `supabase db query --linked` :
+
+```sql
+select version from supabase_migrations.schema_migrations
+where version = '20260922000000';
+select
+  (select count(*) from pg_constraint
+   where conrelid = 'public.studio_collaboration_operations'::regclass
+     and contype = 'u'
+     and pg_get_constraintdef(oid) = 'UNIQUE (studio_id, actor_profile_id, client_sequence)')
+    as old_sequence_unique,
+  (select count(*) from pg_indexes
+   where tablename = 'studio_collaboration_operations'
+     and indexname = 'studio_collaboration_actor_sequence_lookup_idx')
+    as sequence_lookup_index,
+  (select relrowsecurity from pg_class
+   where oid = 'public.studio_collaboration_operations'::regclass) as rls_enabled,
+  (select json_agg(pg_get_constraintdef(oid)) from pg_constraint
+   where conrelid = 'public.studio_collaboration_operations'::regclass
+     and contype = 'u') as remaining_unique_constraints;
+select count(*)::int as reused_sequence_groups from (
+  select studio_id, actor_profile_id, client_sequence
+  from public.studio_collaboration_operations
+  group by studio_id, actor_profile_id, client_sequence having count(*) > 1
+) repaired;
+```

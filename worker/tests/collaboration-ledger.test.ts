@@ -89,7 +89,9 @@ describe('realtime Supabase reconciliation', () => {
       async (_url, init) => {
         if (!init?.body) return Response.json([]);
         assert.equal(typeof init.body, 'string');
-        appended.push(JSON.parse(init.body as string) as Record<string, unknown>);
+        appended.push(
+          JSON.parse(init.body as string) as Record<string, unknown>,
+        );
         return Response.json({ status: 'applied', cursor: 1 });
       },
     );
@@ -342,19 +344,30 @@ describe('realtime Supabase reconciliation', () => {
     const order: string[] = [];
     let stored: Uint8Array | undefined;
     let rpcBody: Record<string, unknown> | undefined;
+    let committed = false;
     const cloud = {
       list: async () => [
         {
           id: operation.scenarioId,
           title: 'Synthetic scenario',
           role: 'owner' as const,
-          currentVersionId: operation.baseVersionId,
+          currentVersionId: committed ? versionId : operation.baseVersionId,
           deletedAt: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
       ],
-      storageKey: async () => 'parent.scenario',
+      storageKey: async (_context: unknown, _scenarioId: string, id: string) =>
+        id === versionId ? String(rpcBody?.p_storage_key) : 'parent.scenario',
+      versions: async () => [
+        {
+          id: versionId,
+          scenarioId: operation.scenarioId,
+          parentVersionId: operation.baseVersionId,
+          checksum: rpcBody?.p_checksum,
+          sizeBytes: stored?.length,
+        },
+      ],
     } as unknown as CloudScenarioRepository;
     const storage: ScenarioObjectStorage = {
       get: async () =>
@@ -392,13 +405,23 @@ describe('realtime Supabase reconciliation', () => {
           return Response.json([
             { operation_id: operation.operationId, cursor: 41 },
           ]);
+        if (url.includes('studio_collaboration_snapshots?'))
+          return Response.json([
+            {
+              id: snapshotId,
+              version_id: versionId,
+              parent_version_id: operation.baseVersionId,
+              through_cursor: 41,
+              checksum: rpcBody?.p_checksum,
+            },
+          ]);
         order.push('sql');
         assert.equal(typeof init?.body, 'string');
         rpcBody = JSON.parse(init?.body as string);
-        return Response.json({ replayed: false });
+        return Response.json({ replayed: committed });
       },
     );
-    const result = await persistence.persist({
+    const input = {
       ...common,
       connectionId: crypto.randomUUID(),
       idempotencyHash: 'c'.repeat(64),
@@ -419,7 +442,8 @@ describe('realtime Supabase reconciliation', () => {
         operationIds: [operation.operationId],
         entries: [],
       },
-    });
+    };
+    const result = await persistence.persist(input);
     assert.deepEqual(order, ['object', 'sql']);
     assert.ok(stored && stored.byteLength > 2);
     assert.equal(rpcBody?.p_snapshot_id, snapshotId);
@@ -427,6 +451,18 @@ describe('realtime Supabase reconciliation', () => {
     assert.equal(rpcBody?.p_through_cursor, 41);
     assert.equal(result.snapshotId, snapshotId);
     assert.equal(result.versionId, versionId);
+    committed = true;
+    const replay = await persistence.persist({
+      ...input,
+      channel: { ...input.channel, replayed: true },
+    });
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.checksum, result.checksum);
+    assert.deepEqual(
+      order,
+      ['object', 'sql', 'sql'],
+      'committed snapshots are reauthorized, never rewritten',
+    );
   });
 });
 

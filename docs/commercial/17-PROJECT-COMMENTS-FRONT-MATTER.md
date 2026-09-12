@@ -116,3 +116,20 @@ tout autre Supabase que zblnsdyaoljnezxdidtx, utilise les trois comptes synthét
 crée son propre projet, vérifie stockage privé/checksums puis le place en corbeille
 et ferme les sessions. Aucun paiement ni appel IA. Résultat à consigner après
 exécution ; ne pas le présumer à partir des tests locaux.
+
+### Premier contrôle hébergé et correction de reprise
+
+Migration installée sur zblnsdyaoljnezxdidtx ; db lint réel sans erreur. Premier
+Worker 9aeeebf : version Cloudflare 9f370637-c9f7-44f7-9579-6b083006448d.
+Le test réel a validé seed privé, trois comptes, champs concurrents, conflit,
+réponses, replay de commentaire et refus viewer. Il a ensuite détecté un défaut
+historique de replay de compaction : le premier snapshot était bien enregistré,
+mais le Worker exigeait encore son ancien parent comme version courante lors du
+retry. Aucun contenu perdu ; projet synthétique placé en corbeille, sessions fermées.
+
+Correction : un replay vérifie le snapshot et sa version immuables, puis repasse
+par la RPC atomique existante pour réautorisation/idempotence avant de retourner.
+Aucun objet n'est réécrit ni complété avec des commentaires plus récents. Un
+nouveau snapshot conserve le contrôle du parent courant. Test unitaire étendu
+pour vérifier « objet, SQL, SQL » sans seconde écriture objet ; 128 tests OK.
+Cette correction ne modifie aucun contrat ni migration déjà appliquée.

@@ -389,6 +389,78 @@ export class SupabaseCollaborationSnapshotPersistence implements CollaborationSn
     const scenario = scenarios.find(
       (candidate) => candidate.id === input.authorization?.scenarioId,
     );
+    // A successful commit advances currentVersionId. Retry must consult the
+    // immutable ledger before enforcing the parent for a NEW snapshot. Recheck
+    // authorization through the original atomic RPC, without rewriting objects
+    // or attaching today's metadata to a historical snapshot.
+    if (scenario && input.channel.replayed) {
+      const saved = await this.rows(
+        'studio_collaboration_snapshots',
+        input.studioId,
+        'id',
+        [input.channel.snapshotId],
+        'id,version_id,parent_version_id,through_cursor,checksum',
+      );
+      if (saved.length) {
+        const row = saved[0];
+        const version = (
+          await this.cloud.versions(cloudContext, scenario.id)
+        ).find(
+          (v) =>
+            v.id === input.channel.versionId && v.scenarioId === scenario.id,
+        );
+        if (
+          saved.length !== 1 ||
+          row.id !== input.channel.snapshotId ||
+          row.version_id !== input.channel.versionId ||
+          row.parent_version_id !== input.parentVersionId ||
+          !Number.isSafeInteger(Number(row.through_cursor)) ||
+          !version ||
+          version.parentVersionId !== input.parentVersionId ||
+          version.checksum !== row.checksum
+        )
+          throw new CommercialRepositoryError(
+            409,
+            'collaboration_snapshot_mismatch',
+            'Snapshot historique incohérent.',
+          );
+        const persisted = await this.rpc<{ replayed: boolean }>(
+          'commit_studio_collaboration_snapshot_v2',
+          {
+            ...this.context(input.context),
+            p_studio_id: input.studioId,
+            p_snapshot_id: input.channel.snapshotId,
+            p_version_id: version.id,
+            p_parent_version_id: input.parentVersionId,
+            p_through_cursor: Number(row.through_cursor),
+            p_storage_key: await this.cloud.storageKey(
+              cloudContext,
+              scenario.id,
+              version.id,
+            ),
+            p_checksum: version.checksum,
+            p_size_bytes: version.sizeBytes,
+            p_title: scenario.title,
+            p_idempotency_hash: input.idempotencyHash,
+            p_request_id: input.requestId,
+          },
+        );
+        if (!persisted.replayed)
+          throw new CommercialRepositoryError(
+            503,
+            'collaboration_snapshot_pending',
+            'Replay historique non confirmé.',
+          );
+        return {
+          snapshotId: input.channel.snapshotId,
+          versionId: version.id,
+          parentVersionId: input.parentVersionId,
+          cursor: input.channel.cursor,
+          checksum: version.checksum,
+          replayed: true,
+        };
+      }
+    }
     if (!scenario || scenario.currentVersionId !== input.parentVersionId)
       throw new CommercialRepositoryError(
         409,
@@ -401,14 +473,27 @@ export class SupabaseCollaborationSnapshotPersistence implements CollaborationSn
       input.parentVersionId,
     );
     const parentBytes = await this.storage.get(parentKey);
-    let snapshotBytes = mergeCollaborationSnapshot(
-      parentBytes,
-      input.artifact,
-    );
+    let snapshotBytes = mergeCollaborationSnapshot(parentBytes, input.artifact);
     if (this.metadata) {
-      const state=await this.metadata.forSnapshot({context:input.context,scenarioId:scenario.id,requestId:input.requestId,snapshotId:input.channel.snapshotId});
-      snapshotBytes=new TextEncoder().encode(JSON.stringify({...JSON.parse(new TextDecoder().decode(snapshotBytes)),...metadataFromRegisters(state.registers),projectMetadataRevision:state.revision}));
-      if(snapshotBytes.length>4194304) throw new CommercialRepositoryError(413,'project_metadata_invalid','Snapshot trop volumineux.');
+      const state = await this.metadata.forSnapshot({
+        context: input.context,
+        scenarioId: scenario.id,
+        requestId: input.requestId,
+        snapshotId: input.channel.snapshotId,
+      });
+      snapshotBytes = new TextEncoder().encode(
+        JSON.stringify({
+          ...JSON.parse(new TextDecoder().decode(snapshotBytes)),
+          ...metadataFromRegisters(state.registers),
+          projectMetadataRevision: state.revision,
+        }),
+      );
+      if (snapshotBytes.length > 4194304)
+        throw new CommercialRepositoryError(
+          413,
+          'project_metadata_invalid',
+          'Snapshot trop volumineux.',
+        );
     }
     const checksum = await sha256(snapshotBytes);
     const accountScope = await hmac(

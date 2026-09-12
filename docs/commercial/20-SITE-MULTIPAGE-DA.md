@@ -67,3 +67,20 @@ Commandes : `npm.cmd run typecheck`, `npm.cmd run build:beta`,
 L'E2E local intercepte les services : il ne constitue pas une validation Supabase
 ou Stripe réelle. Le résultat du contrôle hébergé après déploiement est consigné
 séparément. Noindex, absence de téléchargement public et limites de bêta conservés.
+
+## Publication et contrôle réel — 13 septembre 2026
+
+Commit livré : `9d96f5c`. Déploiement Vercel production
+`dpl_EgEuaKxeFkiZwXyM7AVHTKUect3x`, statut READY, alias `https://senario.app`.
+La commande `npx.cmd --yes vercel@latest deploy --prod --yes --no-color` a reconstruit
+la version avec les variables publiques existantes de production.
+
+E2E hébergé réussi (`SCENARIO_TEST_SITE_URL=https://senario.app`, option `--hosted`) :
+catalogue réel et bascule annuel/mensuel, connexion du compte Owner synthétique via
+Supabase, compte Cloudflare, navigation offres/retour conservant la session,
+déconnexion, neuf pages accessibles directement, menu mobile, absence de
+débordement horizontal et de jetons dans le stockage navigateur. Les prix réels
+du catalogue de test sont conservés : Auteur annuel affiché à 7,33 €/mois.
+Les captures publiques ont été relues. Aucun e-mail, compte ni paiement créé.
+Confirmation et récupération ont été testées localement avec interception, sans
+renvoyer d'e-mail réel lors de cette refonte. Aucun déploiement Worker ni migration.

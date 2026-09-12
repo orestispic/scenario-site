@@ -44,7 +44,8 @@ test('JWKS rotation, single fetch for parallel verification, outage and recovery
   const verifier = new SupabaseJwksTokenVerifier(
     'https://fixture.invalid',
     'authenticated',
-    async () => {
+    async function (this: unknown) {
+      assert.equal(this, undefined);
       calls += 1;
       return Response.json({ keys }, { status: outage ? 503 : 200 });
     },

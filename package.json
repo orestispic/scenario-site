@@ -17,6 +17,8 @@
     "activation-key:local:create": "node scripts/create-local-activation-key.mjs",
     "activation-key:local:revoke": "node scripts/revoke-local-activation-key.mjs",
     "phase9:preflight": "node scripts/phase9-preflight.mjs",
+    "phase9:accounts:provision": "node scripts/phase9-provision-test-accounts.mjs",
+    "phase9:accounts:validate": "node scripts/phase9-validate-test-accounts.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },

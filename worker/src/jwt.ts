@@ -133,7 +133,9 @@ export class SupabaseJwksTokenVerifier implements TokenVerifier {
     if (this.fetching) return this.fetching;
     this.fetching = (async () => {
       try {
-        const response = await this.fetcher(
+        // Cloudflare's native fetch must not be invoked as an object method.
+        const fetcher = this.fetcher;
+        const response = await fetcher(
           `${this.supabaseUrl.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`,
           {
             headers: { Accept: 'application/json' },

@@ -210,7 +210,7 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
         );
       return {
         scenario: this.publicScenario(
-          this.requireScenario(previous.scenarioId),
+          this.requireWrite(previous.scenarioId, input.context.profileId),
           input.context.profileId,
         ),
         version: this.stripStorage(
@@ -428,6 +428,10 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
 
   removeMembership(scenarioId: string, profileId: string): void {
     this.memberships.get(scenarioId)?.delete(profileId);
+  }
+  projectIsActive(scenarioId: string): boolean {
+    const project = this.scenarios.get(scenarioId);
+    return Boolean(project && !project.deletedAt);
   }
 
   private role(

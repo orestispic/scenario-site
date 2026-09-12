@@ -10,6 +10,7 @@ import {
 } from '../src/realtimeCollaboration.ts';
 import { StudioRealtimeChannel } from '../src/studioRealtimeChannel.ts';
 import type { WorkerEnvironment } from '../src/types.ts';
+import type { CollaborationLedger } from '../src/collaborationLedger.ts';
 
 class MemoryStorage {
   readonly values = new Map<string, unknown>();
@@ -19,6 +20,8 @@ class MemoryStorage {
   async put<T>(key: string, value: T): Promise<void> {
     this.values.set(key, structuredClone(value));
   }
+  alarmAt: number | null = null;
+  async setAlarm(time: number): Promise<void> { this.alarmAt = time; }
 }
 
 const STUDIO = '70000000-0000-4000-8000-000000000001';
@@ -63,6 +66,49 @@ function common() {
 }
 
 describe('Studio Durable Object channel', () => {
+  it('durable outbox retries an uncertain SQL write after eviction without the author reconnecting', async () => {
+    const storage = new MemoryStorage();
+    const committed = new Set<string>();
+    let unavailable = true;
+    const ledger: CollaborationLedger = {
+      appendOperation: async (input) => {
+        committed.add(input.operation.operationId);
+        if (unavailable) throw new Error('uncertain');
+        return {status: 'replayed', cursor: 1};
+      }, acknowledgeOperations: async () => 1,
+    };
+    let channel = new StudioRealtimeChannel(state(storage), environment, ledger);
+    const transport = new CloudflareRealtimeTransport({idFromName: (v) => v, get: () => ({fetch: (r) => channel.fetch(r)})});
+    const input = common();
+    const ticket = await transport.issueTicket(input);
+    const connection = await transport.connect({...input, ticket: ticket.ticket, afterCursor: 0});
+    const unsigned = { studioId: STUDIO, scenarioId: SCENARIO, baseVersionId: VERSION, operationId: crypto.randomUUID(), clientSequence: 1, logicalClock: 1, mutation: {type: 'block.delete' as const, blockId: 'synthetic-block'} };
+    const operation = {...unsigned, checksum: await collaborativeOperationChecksum(unsigned)};
+    await assert.rejects(transport.submit({...input, connectionId: connection.connectionId, operation}), /réconciliation|indisponible|Canal/i);
+    const durable = storage.values.get('channel-state-v1') as {outbox: unknown[]};
+    assert.equal(durable.outbox.length, 1); assert.ok(storage.alarmAt);
+    assert.doesNotMatch(JSON.stringify(durable.outbox), /Owner Person|synthetic-email-hash/);
+    assert.equal(JSON.stringify(durable).includes(ticket.ticket), false);
+    unavailable = false;
+    channel = new StudioRealtimeChannel(state(storage), environment, ledger);
+    await channel.alarm(); await channel.alarm();
+    assert.equal((storage.values.get('channel-state-v1') as {outbox: unknown[]}).outbox.length, 0);
+    assert.equal(committed.size, 1);
+  });
+
+  it('a revoked author quarantines pending writes without deleting accepted content', async () => {
+    const storage = new MemoryStorage();
+    const ledger: CollaborationLedger = { appendOperation: async () => { throw new CommercialRepositoryError(403, 'studio_entitlement_missing', 'refused'); }, acknowledgeOperations: async () => null };
+    const channel = new StudioRealtimeChannel(state(storage), environment, ledger);
+    const transport = new CloudflareRealtimeTransport({idFromName: (v) => v, get: () => ({fetch: (r) => channel.fetch(r)})});
+    const input = common(), ticket = await transport.issueTicket(input);
+    const connection = await transport.connect({...input, ticket: ticket.ticket, afterCursor: 0});
+    const unsigned = {studioId: STUDIO, scenarioId: SCENARIO, baseVersionId: VERSION, operationId: crypto.randomUUID(), clientSequence: 1, logicalClock: 1, mutation: {type: 'block.delete' as const, blockId: 'synthetic-block'}};
+    await assert.rejects(transport.submit({...input, connectionId: connection.connectionId, operation: {...unsigned, checksum: await collaborativeOperationChecksum(unsigned)}}));
+    const durable = storage.values.get('channel-state-v1') as {outbox: {blocked: boolean}[]};
+    assert.equal(durable.outbox.length, 1); assert.equal(durable.outbox[0].blocked, true);
+    await channel.alarm(); assert.equal((storage.values.get('channel-state-v1') as {outbox: unknown[]}).outbox.length, 1);
+  });
   it('isolates concurrent commands for three profiles through async authorization and storage', async () => {
     const channel = new StudioRealtimeChannel(
       state(new MemoryStorage()),

@@ -21,6 +21,7 @@ import {
   LocalStudioRepository,
 } from './studio.ts';
 import { DeterministicLocalRealtimeTransport } from './realtimeCollaboration.ts';
+import { LocalCloudProjectRepository } from './cloudProjects.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -96,6 +97,7 @@ export async function createLocalRuntime(
     cloudPolicy: { maximumBodyBytes: 4_194_304, downloadTtlSeconds: 300 },
     studioRepository,
     studioNotifier,
+    projectRepository: new LocalCloudProjectRepository(cloudRepository, studioRepository),
     studioInvitationPepper: 'ephemeral-local-studio-invitation-pepper',
     studioPolicy: { invitationTtlSeconds: 86_400, eventPageSize: 100 },
     realtimeTransport,

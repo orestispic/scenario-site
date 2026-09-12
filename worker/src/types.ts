@@ -37,6 +37,7 @@ export interface WorkerEnvironment {
   OFFLINE_GRANT_PUBLIC_JWK: string;
   OFFLINE_GRANT_KEY_ID: string;
   RATE_LIMIT_MAX_REQUESTS?: string;
+  RATE_LIMIT_INGRESS_MAX_REQUESTS?: string;
   RATE_LIMIT_WINDOW_SECONDS?: string;
   RATE_LIMITER: LimiterNamespace;
   RATE_LIMIT_KEY_PEPPER: string;
@@ -147,6 +148,8 @@ export class CommercialRepositoryError extends Error {
 }
 
 export type WorkerDependencies = {
+  projectRepository?: import('./cloudProjects.ts').CloudProjectRepository;
+  ingressRateLimiter?: RateLimiter;
   telemetry?: Telemetry;
   environment: 'test' | 'staging' | 'production';
   allowedOrigins: string[];

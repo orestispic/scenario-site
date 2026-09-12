@@ -229,6 +229,8 @@ export class LocalStudioRepository implements StudioRepository {
   }
   async create(input: Parameters<StudioRepository['create']>[0]) {
     const scenarios = await this.authorize(input.context);
+    const authorized = scenarios.find((item) => item.id === input.scenarioId && item.role === 'owner' && !item.deletedAt);
+    if (!authorized) throw this.notFound();
     return this.idempotent(
       input.context.profileId,
       input.idempotencyHash,
@@ -339,11 +341,13 @@ export class LocalStudioRepository implements StudioRepository {
       () => {
         const invitation = this.findToken(input.tokenHash);
         this.assertInvitationUsable(invitation, input.context.emailHash);
-        invitation.status = 'accepted';
         const studio = this.requireStudio(invitation.studioId);
         const previous = this.members
           .get(studio.id)
           ?.get(input.context.profileId);
+        if (previous?.status === 'active')
+          throw new CommercialRepositoryError(409, 'invitation_not_pending', 'Ce membre dispose déjà d’un accès.');
+        invitation.status = 'accepted';
         const membership = this.membership(
           studio.id,
           input.context.profileId,
@@ -648,6 +652,21 @@ export class LocalStudioRepository implements StudioRepository {
       'studio_not_found',
       'Studio introuvable.',
     );
+  }
+  projectSharing(scenarioId: string, profileId: string) {
+    const studio = [...this.studios.values()].find((s) => s.scenarioId === scenarioId);
+    const active = studio ? [...(this.members.get(studio.id)?.values() ?? [])].filter((m) => m.status === 'active') : [];
+    return { memberCount: Math.max(1, active.length), studioId: studio && active.some((m) => m.profileId === profileId) ? studio.id : null };
+  }
+  async respondToProjectInvitation(input: { context: StudioContext; invitationId: string; decision: 'accept' | 'decline'; idempotencyHash: string; requestId: string }): Promise<{ responded: true; replayed: boolean }> {
+    await this.authorize(input.context);
+    const invitation = this.invitations.get(input.invitationId);
+    if (!invitation || invitation.recipientEmailHash !== input.context.emailHash) throw this.notFound();
+    const studio = this.requireStudio(invitation.studioId);
+    // The recipient cannot list the project before accepting; check its lifecycle internally.
+    if (!(this.cloud as { projectIsActive?: (id: string) => boolean }).projectIsActive?.(studio.scenarioId)) throw this.notFound();
+    const value = await this[input.decision]({ ...input, tokenHash: invitation.tokenHash });
+    return { responded: true, replayed: value.replayed };
   }
   private idempotent<T extends { replayed: boolean }>(
     profileId: string,

@@ -22,6 +22,7 @@ import {
   SupabaseScenarioObjectStorage,
 } from './cloudSync.ts';
 import { SupabaseStudioRepository } from './studio.ts';
+import { SupabaseCloudProjectRepository } from './cloudProjects.ts';
 import { CloudflareRealtimeTransport } from './realtimeCollaboration.ts';
 import {
   ReconciledRealtimeTransport,
@@ -152,6 +153,13 @@ const productionWorker = {
           maximumRequests,
           windowSeconds * 1_000,
         ),
+        ingressRateLimiter: new DistributedRateLimiter(
+          environment.RATE_LIMITER,
+          required(environment, 'RATE_LIMIT_KEY_PEPPER'),
+          Number(environment.RATE_LIMIT_INGRESS_MAX_REQUESTS ?? 1200),
+          windowSeconds * 1_000,
+        ),
+        projectRepository: new SupabaseCloudProjectRepository(runtimeEnvironment),
         deviceFingerprintPepper: required(
           environment,
           'DEVICE_FINGERPRINT_PEPPER',

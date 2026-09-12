@@ -324,6 +324,7 @@ export class SupabaseCollaborationLedger implements CollaborationLedger {
       `${this.environment.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/rpc/${name}`,
       {
         method: 'POST',
+        signal: AbortSignal.timeout(8000),
         headers: {
           ...supabaseAdminHeaders(this.environment),
           'Content-Type': 'application/json',

@@ -828,7 +828,7 @@ export function createCommercialWorker(
           dependencies.deviceFingerprintPepper,
         );
         if (
-          !(await dependencies.rateLimiter.allow(
+          !(await (dependencies.ingressRateLimiter ?? dependencies.rateLimiter).allow(
             `ingress:${sourceHash}:${normalizedRoute}`,
             Date.now(),
           ))
@@ -933,6 +933,35 @@ export function createCommercialWorker(
           ))
         ) {
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
+        }
+
+        if (normalizedRoute.startsWith('/v9/')) {
+          if (!dependencies.projectRepository || !dependencies.studioInvitationPepper)
+            throw new ApiError(503, 'projects_unconfigured', 'Projets cloud indisponibles.');
+          const mutation = request.method === 'POST';
+          const headers = readCloudHeaders(request, mutation);
+          const context: StudioContext = {
+            profileId: profile.id,
+            emailHash: await hashFingerprint(profile.account.email.trim().toLowerCase(), dependencies.studioInvitationPepper),
+            displayName: profile.account.displayName ?? 'Membre',
+            fingerprintHash: await hashFingerprint(headers.deviceFingerprint, dependencies.deviceFingerprintPepper),
+            platform: headers.platform, clientVersion: headers.clientVersion,
+          };
+          const idempotencyHash = mutation ? await hashFingerprint(`project-v9:${profile.id}:${headers.idempotencyKey}`, dependencies.studioInvitationPepper) : '';
+          let value: object;
+          if (!mutation && normalizedRoute === '/v9/projects') value = await dependencies.projectRepository.list(context);
+          else if (mutation && normalizedRoute === '/v9/projects/:id/sharing') {
+            assertExactKeys(await readObjectBody(request), []);
+            value = await dependencies.projectRepository.ensureSharing({ context, scenarioId: uuid(url.pathname.split('/')[3]), idempotencyHash, requestId });
+          } else if (mutation && normalizedRoute === '/v9/project-invitations/:id/respond') {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['decision']);
+            if (body.decision !== 'accept' && body.decision !== 'decline') throw new ApiError(400, 'invalid_invitation_decision', 'Réponse invalide.');
+            value = await dependencies.projectRepository.respond({ context, invitationId: uuid(url.pathname.split('/')[3]), decision: body.decision, idempotencyHash, requestId });
+          } else throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          status = 200;
+          studio = mutation ? 'mutated' : 'listed';
+          return jsonResponse({ contractVersion: '2026-09-v9', ...value, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
         }
 
         const realtimeRoute = realtimePath(url.pathname);

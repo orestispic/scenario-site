@@ -7,10 +7,15 @@ import {
 } from './realtimeCollaboration.ts';
 import type { StudioContext, StudioRepository } from './studio.ts';
 import { CommercialRepositoryError, type WorkerEnvironment } from './types.ts';
+import { SupabaseCollaborationLedger, type CollaborationLedger } from './collaborationLedger.ts';
+
+type OutboxEntry = Parameters<CollaborationLedger['appendOperation']>[0] & { attempts: number; blocked: boolean };
+type DurableChannelState = DurableRealtimeState & { outboxVersion?: 1; outbox?: OutboxEntry[] };
 
 interface ChannelStorage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
+  setAlarm?(time: number): Promise<void>;
 }
 
 interface ChannelState {
@@ -172,11 +177,16 @@ export class StudioRealtimeChannel {
   private readonly ready: Promise<void>;
   private commands: Promise<unknown> = Promise.resolve();
   private queuedCommands = 0;
+  private outbox: OutboxEntry[] = [];
+  private readonly ledger?: CollaborationLedger;
 
   constructor(
     private readonly state: ChannelState,
     environment: WorkerEnvironment,
+    ledger?: CollaborationLedger,
   ) {
+    this.ledger = ledger ?? (environment.SUPABASE_URL && (environment.SUPABASE_SECRET_KEY || environment.SUPABASE_SERVICE_ROLE_KEY) ? new SupabaseCollaborationLedger(environment) : undefined);
+    if (this.ledger && !state.storage.setAlarm) throw new Error('Durable outbox alarm storage required.');
     const ticketPepper = environment.STUDIO_TICKET_PEPPER?.trim();
     if (!ticketPepper) throw new Error('Studio ticket pepper is required.');
     this.transport = new DeterministicLocalRealtimeTransport(
@@ -185,9 +195,10 @@ export class StudioRealtimeChannel {
       policy(environment),
     );
     const restore = async () => {
-      this.transport.restoreDurableState(
-        await state.storage.get<DurableRealtimeState>('channel-state-v1'),
-      );
+      const saved = await state.storage.get<DurableChannelState>('channel-state-v1');
+      this.transport.restoreDurableState(saved);
+      this.outbox = saved?.outbox ?? [];
+      if (this.outbox.some((entry) => !entry.blocked)) await state.storage.setAlarm?.(Date.now() + 1000);
     };
     this.ready = state.blockConcurrencyWhile
       ? state.blockConcurrencyWhile(restore)
@@ -221,6 +232,9 @@ export class StudioRealtimeChannel {
         { code: 'channel_payload_too_large' },
         { status: 413 },
       );
+    const previous = this.transport.durableState();
+    const previousOutbox = structuredClone(this.outbox);
+    let committed = false;
     try {
       const body = JSON.parse(source) as AuthorizedInput &
         Record<string, unknown>;
@@ -261,14 +275,28 @@ export class StudioRealtimeChannel {
           );
           break;
         case 'submit':
+          if (this.ledger && this.outbox.length >= 32)
+            throw new CommercialRepositoryError(503, 'collaboration_ledger_incomplete', 'Écritures en attente de réconciliation.');
           result = await this.transport.submit(
             body as unknown as Parameters<
               DeterministicLocalRealtimeTransport['submit']
             >[0],
           );
+          if (this.ledger) {
+            const record = (result as Awaited<ReturnType<DeterministicLocalRealtimeTransport['submit']>>).operation;
+            if (record.actorId !== body.context.profileId) throw new CommercialRepositoryError(409, 'collaboration_idempotency_conflict', 'Opération liée à un autre auteur.');
+            if (!this.outbox.some((entry) => entry.operation.operationId === record.operationId)) {
+              const { actorId, request_id, cursor: _cursor, receivedAt: _received, ...operation } = record;
+              this.outbox.push({
+                context: { profileId: actorId, fingerprintHash: body.context.fingerprintHash, platform: body.context.platform, clientVersion: body.context.clientVersion, emailHash: '', displayName: '' },
+                origin: '', studioId: body.studioId, requestId: request_id, operation, attempts: 0, blocked: false,
+              });
+            }
+          }
           persist = true;
           break;
         case 'compact':
+          if (this.outbox.length) throw new CommercialRepositoryError(503, 'collaboration_ledger_incomplete', 'Réconciliation requise avant compaction.');
           result = await this.transport.compact(
             body as unknown as Parameters<
               DeterministicLocalRealtimeTransport['compact']
@@ -318,16 +346,62 @@ export class StudioRealtimeChannel {
             { status: 400 },
           );
       }
-      if (persist)
-        await this.state.storage.put(
-          'channel-state-v1',
-          this.transport.durableState(),
-        );
+      if (persist) {
+        // Arm BEFORE committing: a crash between the put and scheduling an alarm
+        // must not strand accepted operations. One put atomically stores both.
+        if (this.outbox.length) await this.state.storage.setAlarm?.(Date.now() + 1000);
+        await this.persist();
+        committed = true;
+      }
+      if (command === 'submit' && this.ledger) {
+        await this.drain();
+        if (this.outbox.some((entry) => entry.operation.operationId === (body.operation as { operationId: string }).operationId))
+          throw new CommercialRepositoryError(503, 'collaboration_ledger_incomplete', 'Écriture conservée, confirmation en attente.');
+      }
       return Response.json(result);
     } catch (error) {
+      if (!committed) { this.transport.restoreDurableState(previous); this.outbox = previousOutbox; }
       if (error instanceof CommercialRepositoryError)
         return Response.json({ code: error.code }, { status: error.status });
       return Response.json({ code: 'channel_unavailable' }, { status: 503 });
     }
+  }
+
+  private async persist(): Promise<void> {
+    const saved: DurableChannelState = { ...this.transport.durableState(), outboxVersion: 1, outbox: this.outbox };
+    // SQLite-backed Cloudflare values are bounded (2 MB). Keep headroom for
+    // structured serialization. Refuse the new operation before confirming
+    // it rather than allowing the in-memory channel to diverge from storage.
+    if (new TextEncoder().encode(JSON.stringify(saved)).byteLength > 1024 * 1024)
+      throw new CommercialRepositoryError(503, 'channel_backpressure', 'Capacité du canal atteinte : conservez une copie et contactez le support.');
+    await this.state.storage.put('channel-state-v1', saved);
+  }
+
+  async alarm(): Promise<void> {
+    const result = this.commands.then(async () => { await this.ready; await this.drain(); });
+    this.commands = result.catch(() => undefined);
+    await result;
+  }
+
+  private async drain(): Promise<void> {
+    if (!this.ledger || !this.outbox.length) return;
+    // Preserve causal order. A rejected earlier operation blocks later entries.
+    for (const entry of this.outbox.slice(0, 8)) {
+      if (entry.blocked) break;
+      try {
+        await this.ledger.appendOperation(entry);
+        const saved = this.outbox;
+        this.outbox = this.outbox.filter((item) => item !== entry);
+        try { await this.persist(); } catch (error) { this.outbox = saved; throw error; }
+      } catch (error) {
+        entry.attempts = Math.min(entry.attempts + 1, 30);
+        entry.blocked = error instanceof CommercialRepositoryError && [400, 403, 404, 409, 426].includes(error.status);
+        await this.persist();
+        console.warn(JSON.stringify({ event: entry.blocked ? 'studio.outbox_blocked' : 'studio.outbox_retry', request_id: entry.requestId, backlog_depth: this.outbox.length, attempts: entry.attempts }));
+        break;
+      }
+    }
+    const first = this.outbox[0];
+    if (first && !first.blocked) await this.state.storage.setAlarm?.(Date.now() + Math.min(300000, 1000 * 2 ** Math.min(first.attempts, 8)));
   }
 }

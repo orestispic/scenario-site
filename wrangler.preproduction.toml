@@ -7,7 +7,7 @@ preview_urls = false
 
 [vars]
 SCENARIO_ENVIRONMENT = "staging"
-API_ALLOWED_ORIGINS = "http://127.0.0.1:1420,http://localhost:1420,http://127.0.0.1:4173,http://localhost:4173,tauri://localhost,http://tauri.localhost"
+API_ALLOWED_ORIGINS = "http://127.0.0.1:1420,http://localhost:1420,http://127.0.0.1:4173,http://localhost:4173,https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app,tauri://localhost,http://tauri.localhost"
 RATE_LIMIT_MAX_REQUESTS = "60"
 RATE_LIMIT_INGRESS_MAX_REQUESTS = "1200"
 RATE_LIMIT_WINDOW_SECONDS = "60"

@@ -219,3 +219,20 @@ sans enregistrement ni publication sur un nouveau service.
 Le test de stabilité réel a précédé le déploiement v11 (il n'a pas été présenté
 comme un soak post-déploiement). Les fichiers serveur modifiés pour v11 ne touchent
 pas la synchronisation. La connexion au site après déploiement est validée à part.
+
+## Prévisualisation Vercel autorisée
+
+Après achat confirmé de `senario.app`, l'utilisateur a autorisé une prévisualisation
+du projet Vercel existant `scenario-site`, sans promotion et sans connexion du
+domaine. Le dossier commercial a été relié localement au projet ; les trois seules
+variables Vercel Preview enregistrées sont les valeurs publiques API/Supabase.
+`.vercelignore` exclut environnements, Worker, Supabase, scripts, tests, documents
+et livrables opérationnels de l'archive envoyée.
+
+Prévisualisation créée :
+`https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app`.
+Elle est ajoutée comme origine **exacte** à la préproduction Cloudflare ; aucun
+wildcard Vercel n'est autorisé. Cette URL peut être retirée lors du remplacement
+de la prévisualisation. Le domaine acheté reste non connecté et la production
+Vercel existante n'est pas remplacée. La validation réelle et la version Worker
+postérieure sont consignées après leur exécution.

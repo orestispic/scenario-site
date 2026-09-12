@@ -94,3 +94,27 @@ modifiés, `npm.cmd run test:security`, `node scripts/security-check.mjs --app`,
 Base : `supabase migration list --linked`, contrôle SQL transactionnel annulé,
 puis application ciblée avec `supabase migration up --linked` après vérification
 qu'une seule nouvelle migration est en attente. Ne pas utiliser `db push`.
+
+## Résultat de cette intervention
+
+Les 107 tests plateforme passent, ainsi que le typecheck, le lint ciblé, les scans
+de secrets (plateforme et application) et la compilation Worker à blanc. Les
+anciens fichiers de migration restent inchangés. Le client passe 82 tests et son
+build préproduction est vérifié séparément.
+
+La validation hébergée de 120 secondes a reproduit le blocage existant ; elle
+n'est pas un succès post-correction. La migration 20260922000000 et le Worker
+corrigé **ne sont pas encore appliqués/déployés**. La demande d'exécution
+`migration up --linked` a été refusée par le contrôle automatique, qui cite
+l'ancienne restriction à Supabase local et le risque d'appliquer plusieurs
+migrations. Une autorisation explicite ciblant cette migration et le Worker de
+préproduction est requise avant de poursuivre. Le contrôle transactionnel annulé
+n'a conservé aucun changement. Le moteur Docker local n'est pas disponible.
+
+Après cette autorisation : revérifier que seule 20260922000000 est en attente,
+appliquer la migration, vérifier son inscription, déployer le commit testé sur
+`scenario-commercial-api-preproduction`, puis exécuter un premier passage de
+réconciliation et un test neuf de stabilité de 120 secondes avec le vrai client.
+Le succès exige zéro erreur, une connexion par compte, des lectures et heartbeats
+continus, et la fermeture des seules sessions du diagnostic. Ne pas déclencher
+le logout global des comptes interactifs.

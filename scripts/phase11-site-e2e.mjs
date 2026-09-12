@@ -6,7 +6,9 @@ import { pathToFileURL } from 'node:url';
 import { createLocalRuntime } from '../worker/src/localRuntime.ts';
 
 const hosted = process.argv.includes('--hosted');
-const origin = 'http://127.0.0.1:4173';
+const origin = process.env.SCENARIO_TEST_SITE_URL ?? 'http://127.0.0.1:4173';
+if (!['http://127.0.0.1:4173', 'https://scenario-site-hxzddrq8c-orepicard-4993s-projects.vercel.app'].includes(origin))
+  throw new Error('Refusing an unexpected site origin');
 const api = 'https://scenario-commercial-api-preproduction.ore-picard.workers.dev';
 const auth = 'https://zblnsdyaoljnezxdidtx.supabase.co';
 const { chromium } = await import(process.env.SCENARIO_PLAYWRIGHT_PATH ? pathToFileURL(process.env.SCENARIO_PLAYWRIGHT_PATH).href : 'playwright');

@@ -856,10 +856,11 @@ function App() {
                 </div>
                 <div>
                   <p className="eyebrow">WINDOWS 64 BITS</p>
-                  <h2>Dernière version de Senario</h2>
+                  <h2>Senario 0.1.9</h2>
                   <p>
-                    Programme d’installation .exe pour Windows 10 et Windows
-                    11.
+                    Nouvelle bêta avec connexion persistante, quotas IA affichés
+                    et import PDF fiabilisé. Programme d’installation .exe pour
+                    Windows 10 et Windows 11.
                   </p>
                 </div>
                 <a
@@ -870,6 +871,10 @@ function App() {
                   Télécharger pour Windows <Download size={17} />
                 </a>
                 <dl className="download-facts">
+                  <div>
+                    <dt>Version</dt>
+                    <dd>0.1.9 · bêta</dd>
+                  </div>
                   <div>
                     <dt>Format</dt>
                     <dd>Installateur .exe</dd>

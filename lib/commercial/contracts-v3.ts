@@ -32,7 +32,7 @@ export interface BillingState {
   currentPeriodEndsAt: string | null;
   cancelAtPeriodEnd: boolean;
   lastPaymentStatus: 'paid' | 'failed' | null;
-  source: 'stripe' | 'activation_key' | null;
+  source: 'stripe' | 'activation_key' | 'admin_grant' | null;
   testMode: boolean;
 }
 

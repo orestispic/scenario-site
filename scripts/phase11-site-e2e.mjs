@@ -218,7 +218,7 @@ try {
     .click();
   assert.equal(
     await page.locator('a[href*="releases/latest/download"]').count(),
-    0,
+    1,
   );
   assert.equal(await page.locator('script[src*="analytics"]').count(), 0);
   let email = 'synthetic@example.invalid',

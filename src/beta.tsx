@@ -112,7 +112,7 @@ const windowsDownloadUrl =
 const faq = [
   [
     'Puis-je écrire sans connexion ?',
-    'Oui. Vous pouvez travailler sur vos fichiers locaux. La synchronisation cloud et la collaboration demandent une connexion Internet.',
+    'Oui. Aucun compte n’est requis pour écrire, enregistrer et rouvrir vos fichiers locaux. Connectez-vous seulement pour activer les fonctions Auteur ou Studio. La synchronisation cloud et la collaboration demandent aussi Internet.',
   ],
   [
     'Un projet cloud est-il forcément partagé ?',
@@ -501,8 +501,8 @@ function App() {
           </p>
           {view ? (
             free ? (
-              <a className="button secondary" href="/compte">
-                Mon compte <ArrowRight size={16} />
+              <a className="button secondary" href="/telecharger">
+                Télécharger gratuitement <ArrowRight size={16} />
               </a>
             ) : (
               <button
@@ -526,9 +526,9 @@ function App() {
           ) : (
             <a
               className={`button ${plan.featured ? 'primary' : 'secondary'}`}
-              href={free ? '/connexion?inscription=1' : '/connexion'}
+              href={free ? '/telecharger' : '/connexion'}
             >
-              {free ? 'Créer mon compte' : `Essayer ${plan.displayName}`}
+              {free ? 'Télécharger gratuitement' : `Essayer ${plan.displayName}`}
               <ArrowRight size={16} />
             </a>
           )}
@@ -856,11 +856,11 @@ function App() {
                 </div>
                 <div>
                   <p className="eyebrow">WINDOWS 64 BITS</p>
-                  <h2>Senario 0.1.9</h2>
+                  <h2>Senario 0.1.10</h2>
                   <p>
-                    Nouvelle bêta avec connexion persistante, quotas IA affichés
-                    et import PDF fiabilisé. Programme d’installation .exe pour
-                    Windows 10 et Windows 11.
+                    Écrivez et enregistrez vos fichiers locaux sans créer de compte.
+                    La connexion dans l’application active ensuite les droits Auteur
+                    ou Studio. Programme d’installation .exe pour Windows 10 et Windows 11.
                   </p>
                 </div>
                 <a
@@ -873,7 +873,7 @@ function App() {
                 <dl className="download-facts">
                   <div>
                     <dt>Version</dt>
-                    <dd>0.1.9 · bêta</dd>
+                    <dd>0.1.10 · bêta</dd>
                   </div>
                   <div>
                     <dt>Format</dt>
@@ -1009,7 +1009,7 @@ function App() {
                     ? 'Un nouveau mot de passe.'
                     : 'Mot de passe oublié ?',
                 route === '/connexion'
-                  ? 'Connectez-vous pour retrouver votre compte et votre abonnement.'
+                  ? 'La connexion sert à activer les fonctions Auteur ou Studio. L’écriture locale reste accessible sans compte dans l’application.'
                   : recoveryHash
                     ? 'Choisissez votre mot de passe, puis confirmez-le.'
                     : 'Indiquez l’adresse de votre compte. Nous vous enverrons un lien pour choisir un nouveau mot de passe.',

@@ -1,4 +1,5 @@
 import type { OfflineGrantPayload } from '../../lib/commercial/contracts-v2.ts';
+import { offlineLeaseUntil } from './offlineLease.ts';
 import { validateMetadataWrite } from '../../lib/commercial/contracts-v10.ts';
 import { AuthenticationError } from './jwt.ts';
 import {
@@ -2014,16 +2015,30 @@ export function createCommercialWorker(
               'entitlements_missing',
               'Droits indisponibles.',
             );
+          const fingerprint = request.headers.get('X-Scenario-Device-Fingerprint');
+          const device = fingerprint && fingerprint.length >= 16 && fingerprint.length <= 512
+            ? await dependencies.repository.findActiveDevice?.(profile.id, await hashFingerprint(fingerprint, dependencies.deviceFingerprintPepper))
+            : null;
+          const leaseNow = new Date();
+          if (device && url.searchParams.get('offline') === '1') {
+            const billing = await dependencies.billingRepository.getBillingState(profile.id);
+            entitlements.snapshot = { ...entitlements.snapshot,
+              issuedAt: leaseNow.toISOString(),
+              offlineValidUntil: offlineLeaseUntil(billing, entitlements.snapshot.offlineValidUntil, leaseNow.getTime()),
+            };
+          }
           const payload: OfflineGrantPayload = {
             userId: profile.id,
-            deviceId: null,
+            deviceId: device?.id ?? null,
             snapshotId: entitlements.snapshot.id,
             configurationVersion: entitlements.snapshot.configurationVersion,
             issuedAt: entitlements.snapshot.issuedAt,
             expiresAt: entitlements.snapshot.offlineValidUntil,
           };
-          const boundPayload: BoundOfflineGrantPayload = {
+          const boundPayload: BoundOfflineGrantPayload & { deviceFingerprint: string | null; serverTime: string } = {
             ...payload,
+            deviceFingerprint: device ? fingerprint : null,
+            serverTime: leaseNow.toISOString(),
             contractVersion: '2026-09-v4',
             snapshotJson: JSON.stringify(entitlements.snapshot),
           };

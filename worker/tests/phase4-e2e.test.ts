@@ -158,11 +158,24 @@ test('local journey: registration, login, Checkout, signed webhook, rights, devi
   const activation = (await (
     await call('/v1/devices/activate', device)
   ).json()) as { device: { id: string } };
+  const readDeviceLease = async () => {
+    const response = await runtime.worker.fetch(new Request('http://localhost/v3/entitlements?offline=1', {
+      headers: { Authorization: `Bearer ${token}`, Origin: 'http://localhost:3000', 'X-Scenario-Device-Fingerprint': device.fingerprint },
+    }));
+    assert.equal(response.status, 200);
+    const result = await response.json() as { offlineGrant: { payload: string } };
+    return JSON.parse(Buffer.from(result.offlineGrant.payload, 'base64url').toString()) as { deviceId: string | null; deviceFingerprint: string | null; serverTime: string };
+  };
+  const deviceLease = await readDeviceLease();
+  assert.equal(deviceLease.deviceId, activation.device.id);
+  assert.equal(deviceLease.deviceFingerprint, device.fingerprint);
+  assert(Number.isFinite(Date.parse(deviceLease.serverTime)));
   assert.equal(
     (await call('/v1/devices/deactivate', { deviceId: activation.device.id }))
       .status,
     204,
   );
+  assert.equal((await readDeviceLease()).deviceId, null, 'revoked device cannot renew an offline lease');
   const createdKey = await runtime.billing.createLocalActivationKey({
     selectionId: offers[0].selectionId,
     maximumActivations: 1,

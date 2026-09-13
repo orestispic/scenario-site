@@ -129,6 +129,13 @@ export class SupabaseRestRepository implements CommercialRepository {
     return rows.map(this.mapDevice);
   }
 
+  async findActiveDevice(profileId: string, fingerprintHash: string): Promise<DeviceView | null> {
+    const rows = await this.read<DatabaseDevice[]>(
+      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&device_fingerprint_hash=eq.${encodeURIComponent(fingerprintHash)}&status=eq.active&select=id,label,platform,status,last_seen_at&limit=1`,
+    );
+    return rows[0] ? this.mapDevice(rows[0]) : null;
+  }
+
   async activateDevice(
     profileId: string,
     input: ActivateDeviceInput,

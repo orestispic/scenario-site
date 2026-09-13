@@ -106,6 +106,7 @@ export interface CommercialRepository {
   getProfile(authUserId: string): Promise<ProfileRecord | null>;
   getEntitlements(profileId: string): Promise<EntitlementRecord | null>;
   listDevices(profileId: string): Promise<DeviceView[]>;
+  findActiveDevice?(profileId: string, fingerprintHash: string): Promise<DeviceView | null>;
   activateDevice(
     profileId: string,
     input: ActivateDeviceInput,

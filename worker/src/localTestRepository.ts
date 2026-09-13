@@ -180,6 +180,12 @@ export class LocalTestRepository implements CommercialRepository {
     return structuredClone(this.requireState(profileId).devices);
   }
 
+  async findActiveDevice(profileId: string, fingerprintHash: string): Promise<DeviceView | null> {
+    const state = this.requireState(profileId);
+    const id = state.deviceIdsByFingerprint.get(fingerprintHash);
+    return structuredClone(state.devices.find(device => device.id === id && device.status === 'active') ?? null);
+  }
+
   hasActiveDevice(
     profileId: string,
     fingerprintHash: string,

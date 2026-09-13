@@ -23,6 +23,7 @@ export const API_ROUTES = new Set([
   '/v4/ai/actions',
   '/v4/ai/pdf-imports',
   '/v4/ai/reconcile',
+  '/v4/ai/usage',
   '/v5/scenarios',
   '/v5/scenarios/sync',
   '/v5/scenarios/:id/versions',

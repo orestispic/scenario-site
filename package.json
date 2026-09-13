@@ -30,6 +30,7 @@
     "phase9:stripe:checkout:validate": "node scripts/phase9-validate-test-checkout.mjs",
     "phase9:stripe:validate": "node scripts/phase9-validate-stripe-catalog.mjs",
     "phase9:realtime:validate": "node scripts/phase9-validate-hosted-realtime.mjs",
+    "ai:provider:verify": "node scripts/verify-ai-provider.mjs",
     "lint": "oxlint",
     "format": "oxfmt"
   },
@@ -58,6 +59,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electric-sql/pglite": "^0.5.8",
     "@openai/sites-vite-plugin": "0.2.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",

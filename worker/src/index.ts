@@ -13,11 +13,8 @@ import {
   StripeWebhookVerifier,
   UnavailableStripeWebhookVerifier,
 } from './stripeWebhook.ts';
-import {
-  OpenAiResponsesProvider,
-  UnavailableAiProvider,
-} from './aiProvider.ts';
-import { SupabaseAiQuotaRepository } from './aiQuota.ts';
+import { OpenAiResponsesProvider } from './aiProvider.ts';
+import { SupabaseTokenRepository } from './aiTokens.ts';
 import {
   SupabaseCloudScenarioRepository,
   SupabaseScenarioObjectStorage,
@@ -75,16 +72,7 @@ const productionWorker = {
       throw new Error('Stripe test key required');
 
     const openAiApiKey = environment.OPENAI_API_KEY?.trim();
-    const openAiShortModel = environment.OPENAI_SHORT_ACTION_MODEL?.trim();
-    const openAiPdfModel = environment.OPENAI_PDF_IMPORT_MODEL?.trim();
-    const aiConfigured = Boolean(
-      openAiApiKey && openAiShortModel && openAiPdfModel,
-    );
-    if (
-      [openAiApiKey, openAiShortModel, openAiPdfModel].filter(Boolean)
-        .length !== (aiConfigured ? 3 : 0)
-    )
-      throw new Error('Incomplete AI test configuration.');
+    const aiConfigured = Boolean(openAiApiKey);
     if (environment.SCENARIO_ENVIRONMENT === 'production') {
       if (!stripeConfigured)
         throw new Error('Stripe test configuration required.');
@@ -180,20 +168,13 @@ const productionWorker = {
               Number(environment.STRIPE_WEBHOOK_TOLERANCE_SECONDS ?? 300),
             )
           : new UnavailableStripeWebhookVerifier(),
-        aiProvider: aiConfigured
-          ? new OpenAiResponsesProvider({
-              apiKey: openAiApiKey!,
-              shortActionModel: openAiShortModel!,
-              pdfImportModel: openAiPdfModel!,
-              timeoutMs: boundedInteger(
-                environment.AI_PROVIDER_TIMEOUT_MS,
-                90_000,
-                1_000,
-                300_000,
-              ),
-            })
-          : new UnavailableAiProvider(),
-        aiQuotaRepository: new SupabaseAiQuotaRepository(runtimeEnvironment),
+        aiTokens: {
+          repository: new SupabaseTokenRepository(runtimeEnvironment),
+          provider: aiConfigured ? new OpenAiResponsesProvider({
+            apiKey: openAiApiKey!,
+            timeoutMs: boundedInteger(environment.AI_PROVIDER_TIMEOUT_MS, 90_000, 1_000, 300_000),
+          }) : undefined,
+        },
         aiIdempotencyPepper: required(environment, 'AI_IDEMPOTENCY_PEPPER'),
         aiPolicy: {
           shortMaxBodyBytes: boundedInteger(

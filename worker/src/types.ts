@@ -14,6 +14,7 @@ import type { LimiterNamespace } from './distributedRateLimit.ts';
 import type { Telemetry } from './observability.ts';
 import type { AiProvider } from './aiProvider.ts';
 import type { AiQuotaRepository } from './aiQuota.ts';
+import type { TokenRepository, MeteredProvider } from './aiTokens.ts';
 import type {
   CloudScenarioRepository,
   ScenarioObjectStorage,
@@ -165,6 +166,7 @@ export type WorkerDependencies = {
   stripeWebhookVerifier: StripeWebhookVerifierPort;
   aiProvider?: AiProvider;
   aiQuotaRepository?: AiQuotaRepository;
+  aiTokens?: { repository: TokenRepository; provider?: MeteredProvider };
   aiIdempotencyPepper?: string;
   aiPolicy?: {
     shortMaxBodyBytes: number;

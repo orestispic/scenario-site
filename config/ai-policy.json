@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "eurPerUsdCeiling": 1.25,
+  "models": {
+    "short_action": { "model": "gpt-5-nano", "inputUsdPerMillion": 0.05, "outputUsdPerMillion": 0.40, "maxInputTokens": 16000, "maxOutputTokens": 2048, "reasoningEffort": "minimal" },
+    "pdf_import": { "model": "gpt-5-nano", "inputUsdPerMillion": 0.05, "outputUsdPerMillion": 0.40, "maxInputTokens": 48000, "maxOutputTokens": 8192, "reasoningEffort": "minimal" }
+  },
+  "offers": {
+    "discovery": { "dailyEur": 0, "monthlyEur": 0, "dailyTokens": 0, "monthlyTokens": 0 },
+    "author_ai": { "dailyEur": 0.01, "monthlyEur": 0.30, "dailyTokens": 20000, "monthlyTokens": 600000 },
+    "studio": { "dailyEur": 0.03, "monthlyEur": 0.90, "dailyTokens": 60000, "monthlyTokens": 1800000 }
+  }
+}

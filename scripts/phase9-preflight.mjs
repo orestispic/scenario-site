@@ -133,10 +133,8 @@ export function inspectPhase9Server(environment, preproductionConfig) {
   );
   add(
     'fournisseur IA de test',
-    usable(environment.OPENAI_API_KEY) &&
-      usable(environment.OPENAI_SHORT_ACTION_MODEL) &&
-      usable(environment.OPENAI_PDF_IMPORT_MODEL),
-    'Fournir une configuration IA de test ; aucun appel payant ne sera lancé par ce contrôle.',
+    usable(environment.OPENAI_API_KEY),
+    'Fournir la clé IA serveur et appliquer config/ai-policy.json ; aucun appel payant ne sera lancé par ce contrôle.',
   );
   add(
     'canal Studio Cloudflare',

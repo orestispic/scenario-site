@@ -10,11 +10,13 @@ test('publication remains blocked; absence or string truthy values cannot unlock
   assert.ok(publicationBlockers({ schemaVersion: 1, brand: 'senario', publicationAuthorized: 'true' }).length > 0);
   assert.ok(publicationBlockers({}).length > 0);
 });
-test('commercial production entry never builds legacy download or analytics entry', () => {
+test('commercial entry uses only the approved Windows download and no legacy analytics or session storage', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const entry = readFileSync(new URL('../src/beta.tsx', import.meta.url), 'utf8');
   assert.match(html, /src\/beta\.tsx/); assert.match(html, /noindex/);
-  assert.doesNotMatch(entry, /releases\/latest|@vercel\/analytics|localStorage|sessionStorage/);
+  const approvedDownload = 'https://github.com/orestispic/scenario-app/releases/latest/download/Scenario-Setup.exe';
+  assert.ok(entry.includes(approvedDownload));
+  assert.doesNotMatch(entry.replaceAll(approvedDownload, ''), /releases\/latest|@vercel\/analytics|localStorage|sessionStorage/);
 });
 test('all 17 historical migrations including phase 10 remain immutable', () => {
   const hashes: Record<string, string> = JSON.parse(readFileSync(new URL('../release/migrations-phase10.sha256.json', import.meta.url), 'utf8'));

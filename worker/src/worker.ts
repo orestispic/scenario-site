@@ -1,5 +1,7 @@
 import type { OfflineGrantPayload } from '../../lib/commercial/contracts-v2.ts';
+import { isAiEditorDocument } from './aiDocument.ts';
 import { offlineLeaseUntil } from './offlineLease.ts';
+import { executeWithTokens, tokenExecutionResponse, type TokenBudgets, type TokenReservation } from './aiTokens.ts';
 import { validateMetadataWrite } from '../../lib/commercial/contracts-v10.ts';
 import { AuthenticationError } from './jwt.ts';
 import {
@@ -716,9 +718,7 @@ function validateProviderResult(
       );
     }
     if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      (parsed as { formatVersion?: unknown }).formatVersion !== 1
+      !isAiEditorDocument(parsed)
     )
       throw new AiProviderError(
         'definitive',
@@ -1775,13 +1775,23 @@ export function createCommercialWorker(
           throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
         }
 
+        if (url.pathname.startsWith('/v4/ai/') && dependencies.environment !== 'test' && !dependencies.aiTokens)
+          throw new ApiError(503, 'ai_unconfigured', 'Service IA indisponible.');
+
+        if (request.method === 'GET' && url.pathname === '/v4/ai/usage') {
+          if (!dependencies.aiTokens) throw new ApiError(503, 'ai_unconfigured', 'Budgets IA indisponibles.');
+          const budgets = await dependencies.aiTokens.repository.command<TokenBudgets>(profile.id, 'usage');
+          status = 200;
+          return jsonResponse({ budgets, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
         if (
           request.method === 'POST' &&
           ['/v4/ai/actions', '/v4/ai/pdf-imports'].includes(url.pathname)
         ) {
           if (
-            !dependencies.aiProvider ||
-            !dependencies.aiQuotaRepository ||
+            (!dependencies.aiTokens && (!dependencies.aiProvider || !dependencies.aiQuotaRepository)) ||
+            (dependencies.aiTokens && !dependencies.aiTokens.provider) ||
             !dependencies.aiIdempotencyPepper ||
             !dependencies.aiPolicy
           )
@@ -1817,7 +1827,22 @@ export function createCommercialWorker(
             `content:${canonicalJson(providerInput)}`,
             dependencies.aiIdempotencyPepper,
           );
-          let reservation = await dependencies.aiQuotaRepository.reserve({
+          if (dependencies.aiTokens) {
+            if (request.signal.aborted) throw new ApiError(408, 'ai_request_cancelled', 'Demande annulée.');
+            const { reservation, result } = await executeWithTokens(
+              dependencies.aiTokens.repository, dependencies.aiTokens.provider!, profile.id, providerInput, {
+                keyHash: idempotencyKeyHash, fingerprint: requestFingerprint,
+                deviceFingerprintHash: await hashFingerprint(context.deviceFingerprint, dependencies.deviceFingerprintPepper),
+                platform: context.platform, clientVersion: context.clientVersion,
+              }, requestId,
+              value => validateProviderResult(providerInput, value, dependencies.aiPolicy!.maxResponseBytes),
+            );
+            ai = reservation.replayed ? 'replayed' : 'succeeded';
+            status = reservation.status === 'succeeded' ? 200 : 202;
+            return jsonResponse(tokenExecutionResponse(reservation, result, requestId), status, requestId, origin, dependencies.allowedOrigins);
+          }
+          // Legacy in-memory fixtures only. Hosted environments fail closed above.
+          let reservation = await dependencies.aiQuotaRepository!.reserve({
             profileId: profile.id,
             operation,
             entitlementCode:
@@ -1864,7 +1889,7 @@ export function createCommercialWorker(
             );
           }
           if (request.signal.aborted) {
-            reservation = await dependencies.aiQuotaRepository.release(
+            reservation = await dependencies.aiQuotaRepository!.release(
               profile.id,
               reservation.id,
             );
@@ -1876,7 +1901,7 @@ export function createCommercialWorker(
             );
           }
           try {
-            const result = await dependencies.aiProvider.execute(
+            const result = await dependencies.aiProvider!.execute(
               providerInput,
               requestId,
             );
@@ -1885,7 +1910,7 @@ export function createCommercialWorker(
               result,
               dependencies.aiPolicy.maxResponseBytes,
             );
-            reservation = await dependencies.aiQuotaRepository.confirm(
+            reservation = await dependencies.aiQuotaRepository!.confirm(
               profile.id,
               reservation.id,
             );
@@ -1916,7 +1941,7 @@ export function createCommercialWorker(
                     'Fournisseur IA indisponible.',
                   );
             if (providerError.certainty === 'uncertain') {
-              await dependencies.aiQuotaRepository.markUncertain(
+              await dependencies.aiQuotaRepository!.markUncertain(
                 profile.id,
                 reservation.id,
               );
@@ -1927,7 +1952,7 @@ export function createCommercialWorker(
                 'Résultat IA incertain. Réconciliez cette demande avant de réessayer.',
               );
             }
-            await dependencies.aiQuotaRepository.release(
+            await dependencies.aiQuotaRepository!.release(
               profile.id,
               reservation.id,
             );
@@ -1938,7 +1963,7 @@ export function createCommercialWorker(
 
         if (request.method === 'POST' && url.pathname === '/v4/ai/reconcile') {
           if (
-            !dependencies.aiQuotaRepository ||
+            (!dependencies.aiTokens && !dependencies.aiQuotaRepository) ||
             !dependencies.aiIdempotencyPepper
           )
             throw new ApiError(
@@ -1959,7 +1984,13 @@ export function createCommercialWorker(
             `${profile.id}:idempotency:${idempotencyKey}`,
             dependencies.aiIdempotencyPepper,
           );
-          const reservation = await dependencies.aiQuotaRepository.reconcile(
+          if (dependencies.aiTokens) {
+            const reservation = await dependencies.aiTokens.repository.command<TokenReservation>(profile.id, 'status', { keyHash: idempotencyKeyHash });
+            status = 200;
+            ai = 'replayed';
+            return jsonResponse(tokenExecutionResponse(reservation, null, requestId), status, requestId, origin, dependencies.allowedOrigins);
+          }
+          const reservation = await dependencies.aiQuotaRepository!.reconcile(
             profile.id,
             idempotencyKeyHash,
           );

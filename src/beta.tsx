@@ -856,7 +856,7 @@ function App() {
                 </div>
                 <div>
                   <p className="eyebrow">WINDOWS 64 BITS</p>
-                  <h2>Senario 0.1.10</h2>
+                  <h2>Senario 0.1.11</h2>
                   <p>
                     Écrivez et enregistrez vos fichiers locaux sans créer de compte.
                     La connexion dans l’application active ensuite les droits Auteur
@@ -873,7 +873,7 @@ function App() {
                 <dl className="download-facts">
                   <div>
                     <dt>Version</dt>
-                    <dd>0.1.10 · bêta</dd>
+                    <dd>0.1.11 · bêta</dd>
                   </div>
                   <div>
                     <dt>Format</dt>

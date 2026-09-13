@@ -989,6 +989,103 @@ details p {
   font-size: 14px;
   color: var(--muted);
 }
+.download-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 56px;
+  align-items: start;
+}
+.download-card {
+  display: grid;
+  gap: 25px;
+}
+.download-card .eyebrow {
+  margin-bottom: 8px;
+}
+.download-card h2 {
+  font-size: 29px;
+  margin-bottom: 8px;
+}
+.download-card > div > p:last-child,
+.installation-steps > p,
+.installation-steps li p,
+.update-note p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 0;
+}
+.download-card > .button {
+  width: 100%;
+  justify-content: space-between;
+}
+.download-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.download-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 7px;
+}
+.download-facts dd {
+  margin: 0;
+  color: #d6e0eb;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.installation-steps {
+  padding: 14px 0;
+}
+.installation-steps .eyebrow {
+  margin-bottom: 14px;
+}
+.installation-steps h2 {
+  font-size: 28px;
+}
+.installation-steps ol {
+  padding: 0;
+  margin: 30px 0;
+  list-style: none;
+}
+.installation-steps li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 15px;
+  padding: 0 0 25px;
+}
+.installation-steps li > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #285581;
+  border-radius: 6px;
+  background: var(--selected);
+  color: var(--info);
+  font-size: 12px;
+  font-weight: 600;
+}
+.installation-steps li strong {
+  display: block;
+  font-size: 14px;
+  margin: 3px 0 7px;
+}
+.update-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 22px;
+}
+.update-note svg {
+  color: var(--info);
+  margin-top: 3px;
+}
 .contact-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1252,6 +1349,10 @@ details p {
     grid-template-columns: 1fr;
     gap: 25px;
   }
+  .download-grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
   .account-grid {
     grid-template-columns: 1fr;
   }
@@ -1452,6 +1553,9 @@ details p {
   .inline-offers {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .download-facts {
+    grid-template-columns: 1fr;
   }
   .account-actions {
     align-items: flex-start;

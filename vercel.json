@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/offres", "destination": "/index.html" },
+    { "source": "/telecharger", "destination": "/index.html" },
     { "source": "/compte", "destination": "/index.html" },
     { "source": "/connexion", "destination": "/index.html" },
     { "source": "/reinitialisation", "destination": "/index.html" },

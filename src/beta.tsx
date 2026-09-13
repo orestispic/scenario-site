@@ -23,6 +23,8 @@ import {
   PenLine,
   History,
   ArrowUpRight,
+  RefreshCw,
+  MonitorDown,
 } from 'lucide-react';
 import {
   BrowserAccount,
@@ -45,6 +47,7 @@ type AccountView = Awaited<ReturnType<BrowserAccount['account']>>;
 const routes: Record<string, string> = {
   '/': 'la meilleure page blanche',
   '/offres': 'Offres et FAQ',
+  '/telecharger': 'Télécharger Senario',
   '/compte': 'Mon compte',
   '/connexion': 'Connexion',
   '/reinitialisation': 'Mot de passe oublié',
@@ -56,7 +59,7 @@ const routes: Record<string, string> = {
 const legacy: Record<string, string> = {
   '#accueil': '/',
   '#projets': '/',
-  '#telecharger': '/',
+  '#telecharger': '/telecharger',
   '#offres': '/offres',
   '#aide': '/offres',
   '#compte': '/compte',
@@ -104,6 +107,8 @@ const features = [
     text: 'Exportez un PDF pour la lecture. Gardez un fichier .scenario pour continuer à modifier votre projet.',
   },
 ];
+const windowsDownloadUrl =
+  'https://github.com/orestispic/scenario-app/releases/latest/download/Scenario-Setup.exe';
 const faq = [
   [
     'Puis-je écrire sans connexion ?',
@@ -127,7 +132,7 @@ const faq = [
   ],
   [
     'Puis-je télécharger l’application ?',
-    'Le téléchargement public de la bêta Windows n’est pas encore ouvert. La version commerciale macOS n’est pas disponible pour le moment.',
+    'Oui. La bêta est disponible pour Windows 10 et 11 en 64 bits. Elle vérifie ensuite automatiquement les nouvelles versions signées. La version macOS n’est pas encore publiée.',
   ],
   [
     'Comment conserver une copie de mon travail ?',
@@ -716,6 +721,12 @@ function App() {
             Fonctionnalités
           </a>
           <a
+            aria-current={route === '/telecharger' ? 'page' : undefined}
+            href="/telecharger"
+          >
+            Télécharger
+          </a>
+          <a
             aria-current={route === '/contact' ? 'page' : undefined}
             href="/contact"
           >
@@ -817,19 +828,115 @@ function App() {
                   <Download />
                 </div>
                 <div>
-                  <h2>Le téléchargement Windows arrive.</h2>
+                  <h2>Senario est disponible pour Windows.</h2>
                   <p>
-                    L’accès public à l’application n’est pas encore ouvert. Vous
-                    pouvez déjà créer votre compte et consulter les offres de la
-                    bêta.
+                    Installez la bêta sur Windows 10 ou 11 en 64 bits. Les
+                    nouvelles versions signées sont ensuite téléchargées et
+                    installées automatiquement.
                   </p>
                 </div>
-                <a className="button secondary" href="/offres">
-                  Voir les offres <ArrowRight size={16} />
+                <a className="button primary" href="/telecharger">
+                  Télécharger <ArrowRight size={16} />
                 </a>
               </div>
             </section>
           </>
+        )}
+        {route === '/telecharger' && (
+          <section className="container page download-page">
+            {title(
+              'APPLICATION WINDOWS',
+              'Télécharger Senario.',
+              'Installez la bêta sur Windows 10 ou 11. Vos fichiers .scenario restent enregistrés sur votre ordinateur.',
+            )}
+            <div className="download-grid">
+              <article className="panel download-card">
+                <div className="icon-box">
+                  <MonitorDown />
+                </div>
+                <div>
+                  <p className="eyebrow">WINDOWS 64 BITS</p>
+                  <h2>Dernière version de Senario</h2>
+                  <p>
+                    Programme d’installation .exe pour Windows 10 et Windows
+                    11.
+                  </p>
+                </div>
+                <a
+                  className="button primary"
+                  href={windowsDownloadUrl}
+                  download
+                >
+                  Télécharger pour Windows <Download size={17} />
+                </a>
+                <dl className="download-facts">
+                  <div>
+                    <dt>Format</dt>
+                    <dd>Installateur .exe</dd>
+                  </div>
+                  <div>
+                    <dt>Mises à jour</dt>
+                    <dd>Automatiques et signées</dd>
+                  </div>
+                  <div>
+                    <dt>Prix de la bêta</dt>
+                    <dd>Aucun paiement réel</dd>
+                  </div>
+                </dl>
+              </article>
+              <article className="installation-steps">
+                <p className="eyebrow">INSTALLATION</p>
+                <h2>Trois étapes.</h2>
+                <ol>
+                  <li>
+                    <span>1</span>
+                    <div>
+                      <strong>Téléchargez Scenario-Setup.exe</strong>
+                      <p>Le fichier vient de la page de publication Senario.</p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>2</span>
+                    <div>
+                      <strong>Ouvrez le fichier</strong>
+                      <p>
+                        Pendant la bêta, Windows peut afficher « Éditeur
+                        inconnu ». Vérifiez que le fichier s’appelle bien
+                        Scenario-Setup.exe avant de continuer.
+                      </p>
+                    </div>
+                  </li>
+                  <li>
+                    <span>3</span>
+                    <div>
+                      <strong>Lancez Senario</strong>
+                      <p>
+                        Les mises à jour sont vérifiées au démarrage. Une mise à
+                        jour attend que votre document soit enregistré avant de
+                        s’installer.
+                      </p>
+                    </div>
+                  </li>
+                </ol>
+                <div className="update-note">
+                  <RefreshCw size={18} />
+                  <p>
+                    Une coupure Internet n’empêche pas d’écrire dans un fichier
+                    local.
+                  </p>
+                </div>
+              </article>
+            </div>
+            <div className="inline-offers">
+              <span>
+                Choisissez les fonctions cloud et collaboratives dont vous avez
+                besoin.
+              </span>
+              <a className="button secondary" href="/offres">
+                Voir les offres <ArrowRight size={16} />
+              </a>
+            </div>
+          </section>
         )}
         {route === '/offres' && (
           <div className="container page offers-page" id="offres">
@@ -1133,6 +1240,7 @@ function App() {
           <a href="/offres">
             Voir les offres <ArrowUpRight size={14} />
           </a>
+          <a href="/telecharger">Télécharger</a>
           <a href="/contact">Contact</a>
         </div>
         <div className="container footer-bottom">

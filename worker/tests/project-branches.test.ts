@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { readVersionCommand, SupabaseProjectBranchRepository } from '../src/projectBranches.ts';
+import { readVersionCommand, SupabaseProjectBranchRepository, type VersionCommand } from '../src/projectBranches.ts';
 import { seedMetadata } from '../../lib/commercial/contracts-v10.ts';
 import type { WorkerEnvironment } from '../src/types.ts';
 import type { ScenarioObjectStorage } from '../src/cloudSync.ts';
 const checksum=(v:Uint8Array)=>createHash('sha256').update(v).digest('hex');
 const context={profileId:randomUUID(),fingerprintHash:'f'.repeat(64),platform:'windows' as const,clientVersion:'0.1.12'};
-it('v14 accepts only explicit version commands, never client ACLs or storage keys',()=>{
+void it('v14 accepts only explicit version commands, never client ACLs or storage keys',()=>{
   const command={action:'blank',operationId:randomUUID(),name:' Version 2 '};
   assert.equal(readVersionCommand(command).name,'Version 2');
   for(const extra of [{role:'owner'},{storageKey:'secret'},{document:{}},{expectedRevision:0}]) assert.throws(()=>readVersionCommand({...command,...extra}));
@@ -16,10 +16,11 @@ it('v14 accepts only explicit version commands, never client ACLs or storage key
 function fixture(corrupt=false, replay=false) {
   const document={formatVersion:1,title:'Projet',content:{type:'doc',content:[{type:'paragraph',attrs:{blockId:'one'},content:[{type:'text',text:'ancien'}]}]},coverPage:{projectName:'Page source'},comments:[],coverPageHidden:false};
   const bytes=new TextEncoder().encode(JSON.stringify(document));
-  const writes:Array<{key:string;bytes:Uint8Array}>=[],calls:Record<string,any>[]=[];
+  const writes:Array<{key:string;bytes:Uint8Array}>=[],calls:Array<{p_command:VersionCommand;p_artifact:{stamp:unknown}|null;p_fingerprint:string}>=[];
   const storage:ScenarioObjectStorage={get:async()=>bytes,put:async(input:{key:string;bytes:Uint8Array})=>{writes.push(input);},temporaryDownload:async()=>{throw new Error('Not used');}};
   const fetcher=async(_url:unknown,init?:RequestInit)=>{
-    const body=JSON.parse(String(init?.body));calls.push(body);
+    assert.equal(typeof init?.body,'string');
+    const body=JSON.parse(init!.body as string) as (typeof calls)[number];calls.push(body);
     if(replay||body.p_artifact)return Response.json({version:{id:'created'},replayed:replay});
     if(body.p_command.action==='blank')return Response.json({source:null});
     return Response.json({source:{storageKey:'source',checksum:corrupt?'0'.repeat(64):checksum(bytes),sizeBytes:bytes.length,stamp:{head:'h',cursor:1,metadata:2},registers:seedMetadata({...document,coverPage:{projectName:'Page modifiée'}}),entries:[{blockId:'one',operationId:randomUUID(),actorId:context.profileId,logicalClock:1,tombstone:false,mutation:{type:'block.upsert',blockId:'one',afterBlockId:null,block:{type:'paragraph',attrs:{blockId:'one'},content:[{type:'text',text:'texte en direct'}]}}}]}});
@@ -27,23 +28,23 @@ function fixture(corrupt=false, replay=false) {
   const repository=new SupabaseProjectBranchRepository({SUPABASE_URL:'https://example.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'test-server-key'} as WorkerEnvironment,storage,fetcher as typeof fetch);
   return {repository,writes,calls};
 }
-it('v14 duplicates the persisted live text and latest cover, with source CAS and fresh storage identity',async()=>{
+void it('v14 duplicates the persisted live text and latest cover, with source CAS and fresh storage identity',async()=>{
   const f=fixture(),root=randomUUID();
   await f.repository.change(context,root,{action:'duplicate',operationId:randomUUID(),name:'Copy',sourceVersionId:randomUUID()},randomUUID());
   assert.equal(f.writes.length,1);const file=JSON.parse(new TextDecoder().decode(f.writes[0].bytes));
   assert.equal(file.content.content[0].content[0].text,'texte en direct');assert.equal(file.coverPage.projectName,'Page modifiée');
   assert.ok(f.writes[0].key.startsWith(`branches/${root}/`));assert.notEqual(f.writes[0].key,'source');
-  assert.deepEqual(f.calls[1].p_artifact.stamp,{head:'h',cursor:1,metadata:2});
+  assert.deepEqual(f.calls[1].p_artifact?.stamp,{head:'h',cursor:1,metadata:2});
   assert.equal(f.calls[0].p_fingerprint,f.calls[1].p_fingerprint);
 });
-it('v14 rejects corrupt source bytes before creating anything',async()=>{
+void it('v14 rejects corrupt source bytes before creating anything',async()=>{
   const f=fixture(true);await assert.rejects(f.repository.change(context,randomUUID(),{action:'duplicate',operationId:randomUUID(),name:'Copy',sourceVersionId:randomUUID()},randomUUID()),/Intégrité/);
   assert.equal(f.writes.length,0);assert.equal(f.calls.length,1);
 });
-it('v14 blank versions contain no inherited cover, comments or text',async()=>{
+void it('v14 blank versions contain no inherited cover, comments or text',async()=>{
   const f=fixture();await f.repository.change(context,randomUUID(),{action:'blank',operationId:randomUUID(),name:'Blank'},randomUUID());
   const file=JSON.parse(new TextDecoder().decode(f.writes[0].bytes));assert.deepEqual(file.comments,[]);assert.deepEqual(file.coverPage,{});assert.equal(file.content.content[0].content,undefined);
 });
-it('v14 exact replay does not create an extra storage object',async()=>{
+void it('v14 exact replay does not create an extra storage object',async()=>{
   const f=fixture(false,true);await f.repository.change(context,randomUUID(),{action:'blank',operationId:randomUUID(),name:'Blank'},randomUUID());assert.equal(f.writes.length,0);
 });

@@ -31,7 +31,23 @@ local multiversion reste refusé explicitement ; il n'est jamais aplati.
   les comptes synthétiques de préproduction, projets de test placés ensuite
   dans la corbeille et sessions de test fermées. Aucune donnée utilisateur réelle.
 
-Migration autorisée : `20260927000000_named_project_versions.sql`, uniquement
-Supabase `zblnsdyaoljnezxdidtx`. Worker cible :
-`scenario-commercial-api-preproduction`. Le résultat hébergé sera consigné après
-exécution, sans considérer les seuls tests simulés comme une validation réelle.
+## Déploiement et résultat du 14 septembre 2026
+
+Supabase `zblnsdyaoljnezxdidtx` : migrations `20260927000000`,
+`20260927100000` et `20260927200000` appliquées. La première a aussi été validée
+sur le serveur dans une transaction entièrement annulée avant application.
+Le premier essai hébergé a détecté une coercition JSON vers texte sur le chemin
+de téléchargement ; la migration corrective conserve le contrat historique.
+Le second correctif uniformise les verrous et interdit le partage autonome
+d’un scénario interne. Aucune migration déjà appliquée n’a été modifiée.
+
+Worker `scenario-commercial-api-preproduction` : contrat v14 déployé.
+Validation réelle réussie avec Owner, Editor et Viewer : création vierge,
+répétition idempotente, canaux indépendants, duplication du texte non compacté,
+commentaires et couverture à jour, écritures concurrentes de métadonnées,
+refus du lecteur, suppression/restauration et révocation héritée. Validation
+hébergée v10/v8 existante également réussie (non-régression des snapshots).
+
+172 tests serveur, typecheck, lint ciblé et contrôle de sécurité réussis.
+Les projets synthétiques ont été placés dans la corbeille ; historique immuable
+conservé, sessions de test fermées. L’installateur Windows n’est pas publié ici.

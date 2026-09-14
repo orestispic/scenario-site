@@ -12,7 +12,8 @@ begin
  select device_fingerprint_hash into ed from public.devices where user_id=editor_id and status='active' limit 1;
  select device_fingerprint_hash into vd from public.devices where user_id=viewer_id and status='active' limit 1;
  result:=public.sync_cloud_scenario(owner_id,od,'windows','0.1.12',jsonb_build_object('scenarioId',project,'title','Branches rollback','parentVersionId',null,'checksum',repeat('f',64),'sizeBytes',2,'contentType','application/vnd.scenario+json','format','scenario-v1','origin','save'),'branches/test',repeat('b',64),repeat('b',64),gen_random_uuid());
- base:=(result#>>'{version,id}')::uuid;
+  base:=(result#>>'{version,id}')::uuid;
+ if public.get_cloud_storage_key(owner_id,od,'windows','0.1.12',project,base) is distinct from to_jsonb('branches/test'::text) then raise exception 'download scalar contract changed';end if;
  result:=public.project_branches_v14(owner_id,od,'windows','0.1.12',project,'{"action":"list"}',null,null,gen_random_uuid());
  if jsonb_array_length(result->'versions')<>1 or result#>>'{versions,0,project,realtimeBaseVersionId}' is not null or result#>>'{versions,0,project,memberCount}'<>'1' then raise exception 'invalid private catalog';end if;
  command:=jsonb_build_object('action','blank','operationId',op,'name','Version 2');

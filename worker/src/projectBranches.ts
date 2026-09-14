@@ -1,6 +1,7 @@
 import type { CloudProject } from '../../lib/commercial/contracts-v9.ts';
 import { seedMetadata, metadataFromRegisters } from '../../lib/commercial/contracts-v10.ts';
 import { mergeCollaborationSnapshot } from './collaborationLedger.ts';
+import type { CollaborationSnapshotArtifact } from './realtimeCollaboration.ts';
 import type { ScenarioObjectStorage } from './cloudSync.ts';
 import type { CloudAccessContext } from './cloudSync.ts';
 import { CommercialRepositoryError, type WorkerEnvironment } from './types.ts';
@@ -40,17 +41,23 @@ const messages: Record<string,string> = {
   cloud_entitlement_missing: 'Votre offre ne donne pas accès aux projets cloud.', client_update_required: 'Une mise à jour de Senario est nécessaire.',
 };
 const hash = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(b => b.toString(16).padStart(2,'0')).join('');
+interface BranchRpcResponse {
+  versions?: CloudProjectVersion[]; version?: CloudProjectVersion; replayed?: boolean;
+  source?: { sizeBytes: number; checksum: string; storageKey: string; entries: CollaborationSnapshotArtifact['entries']; registers: ReturnType<typeof seedMetadata> | null; stamp: unknown } | null;
+}
 
 export class SupabaseProjectBranchRepository implements ProjectBranchRepository {
   constructor(private readonly environment: WorkerEnvironment, private readonly storage: ScenarioObjectStorage, private readonly fetcher: typeof fetch = fetch) {}
   async list(context: CloudAccessContext, projectId: string, requestId: string) {
-    return this.rpc(context,projectId,{ action: 'list' },null,null,requestId) as Promise<{versions: CloudProjectVersion[]}>;
+    const result = await this.rpc(context,projectId,{ action: 'list' },null,null,requestId);
+    if (!Array.isArray(result.versions)) throw new CommercialRepositoryError(503,'branches_unavailable','Liste des versions indisponible.');
+    return { versions: result.versions };
   }
   async change(context: CloudAccessContext, projectId: string, command: VersionCommand, requestId: string) {
     command = readVersionCommand(command);
     const fingerprint = await hash(new TextEncoder().encode(JSON.stringify(command)));
     const prepared = await this.rpc(context,projectId,command,fingerprint,null,requestId);
-    if (prepared.version) return prepared;
+    if (prepared.version) return { version: prepared.version, replayed: prepared.replayed === true };
     let document: Record<string, unknown>, stamp: unknown = null;
     if (command.action === 'duplicate') {
       const source = prepared.source;
@@ -74,9 +81,11 @@ export class SupabaseProjectBranchRepository implements ProjectBranchRepository 
     await this.storage.put({ key: storageKey, bytes, checksum, contentType: 'application/vnd.scenario+json' });
     // CAS rejects a changed source or revoked access. Failed commits only leave an
     // unreferenced object; no existing document or version is ever overwritten.
-    return this.rpc(context,projectId,command,fingerprint,{ storageKey,checksum,sizeBytes:bytes.length,stamp },requestId);
+    const result = await this.rpc(context,projectId,command,fingerprint,{ storageKey,checksum,sizeBytes:bytes.length,stamp },requestId);
+    if (!result.version) throw new CommercialRepositoryError(503,'branches_unavailable','Confirmation de la version indisponible. Réessayez la même demande.');
+    return { version: result.version, replayed: result.replayed === true };
   }
-  private async rpc(context: CloudAccessContext, projectId: string, command: object, fingerprint: string|null, artifact: unknown, requestId: string): Promise<any> {
+  private async rpc(context: CloudAccessContext, projectId: string, command: object, fingerprint: string|null, artifact: unknown, requestId: string): Promise<BranchRpcResponse> {
     const response = await detachedFetch(this.fetcher,`${this.environment.SUPABASE_URL.replace(/\/$/,'')}/rest/v1/rpc/project_branches_v14`,{
       method:'POST', headers:{...supabaseAdminHeaders(this.environment),'Content-Type':'application/json'},
       body:JSON.stringify({p_profile_id:context.profileId,p_fingerprint_hash:context.fingerprintHash,p_platform:context.platform,p_client_version:context.clientVersion,p_project_id:projectId,p_command:command,p_fingerprint:fingerprint,p_artifact:artifact,p_request_id:requestId}),
@@ -86,6 +95,6 @@ export class SupabaseProjectBranchRepository implements ProjectBranchRepository 
       const status = code === 'client_update_required' ? 426 : code?.includes('not_found') ? 404 : code?.includes('forbidden') || code?.includes('required') || code?.includes('missing') || code?.includes('inactive') ? 403 : code === 'branch_invalid' ? 400 : code ? 409 : 503;
       throw new CommercialRepositoryError(status,code ?? 'branches_unavailable',code ? messages[code] : 'Versions cloud indisponibles. Réessayez.');
     }
-    return response.json();
+    return response.json() as Promise<BranchRpcResponse>;
   }
 }

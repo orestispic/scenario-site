@@ -66,6 +66,8 @@ try {
   const polled=await call(`${editor.prefix}/poll`,'editor',{connectionId:editor.connectionId,afterCursor:0});
   assert.ok(polled.events.some(e=>e.operation?.operationId===rootOp.operationId));assert.ok(!polled.events.some(e=>e.operation?.operationId===childOp.operationId));
   const metadataPath=`/v10/projects/${id}/metadata`;await call(metadataPath,'owner');
+  const concurrent=await Promise.all(['owner','editor'].map((role,i)=>call(metadataPath,role,{operationId:randomUUID(),changes:[{key:i?'cover.director':'cover.screenwriter',value:role,expectedRevision:0}]})));
+  assert.ok(concurrent.every(r=>r.status==='applied'),'Concurrent metadata writes must not deadlock');
   await call(metadataPath,'editor',{operationId:randomUUID(),changes:[{key:'cover.projectName',value:'Live cover',expectedRevision:0},{key:'comment:comment_test',value:{...comment,messages:[{...comment.messages[0],text:'Live comment'}]},expectedRevision:0}]});
   const duplicate=(await call(path,'editor',{action:'duplicate',operationId:randomUUID(),sourceVersionId:id,name:'Live copy'})).version;
   const duplicateFile=await download(duplicate.project);

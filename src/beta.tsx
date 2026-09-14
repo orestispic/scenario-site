@@ -856,11 +856,12 @@ function App() {
                 </div>
                 <div>
                   <p className="eyebrow">WINDOWS 64 BITS</p>
-                  <h2>Senario 0.1.11</h2>
+                  <h2>Senario 0.1.12</h2>
                   <p>
                     Écrivez et enregistrez vos fichiers locaux sans créer de compte.
                     La connexion dans l’application active ensuite les droits Auteur
-                    ou Studio. Programme d’installation .exe pour Windows 10 et Windows 11.
+                    ou Studio et autorise automatiquement cet appareil.
+                    Programme d’installation .exe pour Windows 10 et Windows 11.
                   </p>
                 </div>
                 <a
@@ -873,7 +874,7 @@ function App() {
                 <dl className="download-facts">
                   <div>
                     <dt>Version</dt>
-                    <dd>0.1.11 · bêta</dd>
+                    <dd>0.1.12 · bêta</dd>
                   </div>
                   <div>
                     <dt>Format</dt>

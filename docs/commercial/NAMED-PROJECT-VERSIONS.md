@@ -34,14 +34,17 @@ local multiversion reste refusé explicitement ; il n'est jamais aplati.
 ## Déploiement et résultat du 14 septembre 2026
 
 Supabase `zblnsdyaoljnezxdidtx` : migrations `20260927000000`,
-`20260927100000` et `20260927200000` appliquées. La première a aussi été validée
+`20260927100000`, `20260927200000` et `20260927300000` appliquées. La première a aussi été validée
 sur le serveur dans une transaction entièrement annulée avant application.
 Le premier essai hébergé a détecté une coercition JSON vers texte sur le chemin
 de téléchargement ; la migration corrective conserve le contrat historique.
 Le second correctif uniformise les verrous et interdit le partage autonome
-d’un scénario interne. Aucune migration déjà appliquée n’a été modifiée.
+d’un scénario interne. Le dernier sépare l’administration du projet de son
+canal initial : supprimer Version 1 ne bloque pas la gestion des collaborateurs.
+Aucune migration déjà appliquée n’a été modifiée.
 
-Worker `scenario-commercial-api-preproduction` : contrat v14 déployé.
+Worker `scenario-commercial-api-preproduction` : contrat v14 déployé, commit
+`8721855`, version Cloudflare `caa14f73-cf69-423a-b402-268ec2f78cc9`.
 Validation réelle réussie avec Owner, Editor et Viewer : création vierge,
 répétition idempotente, canaux indépendants, duplication du texte non compacté,
 commentaires et couverture à jour, écritures concurrentes de métadonnées,

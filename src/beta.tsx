@@ -433,12 +433,12 @@ function App() {
     const monthly = interval === 'month';
     return (
       <div className="billing-control">
-        <span className={!monthly ? 'selected' : ''}>Annuel</span>
+        <span className={monthly ? 'selected' : ''}>Mensuel</span>
         <button
           className="billing-switch"
           type="button"
           role="switch"
-          aria-checked={monthly}
+          aria-checked={!monthly}
           aria-label={
             monthly ? 'Afficher les prix annuels' : 'Afficher les prix mensuels'
           }
@@ -446,7 +446,7 @@ function App() {
         >
           <i />
         </button>
-        <span className={monthly ? 'selected' : ''}>Mensuel</span>
+        <span className={!monthly ? 'selected' : ''}>Annuel</span>
       </div>
     );
   }

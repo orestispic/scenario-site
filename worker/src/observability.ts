@@ -1,4 +1,5 @@
 export const API_ROUTES = new Set([
+  '/v14/projects/:id/versions',
   '/v11/catalog',
   '/v10/projects/:id/metadata',
   '/v9/projects',
@@ -50,6 +51,7 @@ export const API_ROUTES = new Set([
 const UUID =
   '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 export function normalizeApiRoute(pathname: string): string {
+  if (new RegExp(`^/v14/projects/${UUID}/versions$`, 'i').test(pathname)) return '/v14/projects/:id/versions';
   if (new RegExp(`^/v10/projects/${UUID}/metadata$`, 'i').test(pathname)) return '/v10/projects/:id/metadata';
   if (API_ROUTES.has(pathname)) return pathname;
   if (new RegExp(`^/v9/projects/${UUID}/sharing$`, 'i').test(pathname)) return '/v9/projects/:id/sharing';

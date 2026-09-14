@@ -12,6 +12,7 @@ import {
 import { fingerprintActivationKey } from './activationKeys.ts';
 import { StripeWebhookError } from './stripeWebhook.ts';
 import { normalizeApiRoute, structuredTelemetry } from './observability.ts';
+import { readVersionCommand } from './projectBranches.ts';
 import type { BoundOfflineGrantPayload } from '../../lib/commercial/contracts-v4.ts';
 import type {
   AiActionRequest,
@@ -960,6 +961,17 @@ export function createCommercialWorker(
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
         }
 
+        if (normalizedRoute === '/v14/projects/:id/versions') {
+          if (!dependencies.branchRepository) throw new ApiError(503,'branches_unavailable','Les versions cloud nécessitent une mise à jour du serveur.');
+          if (!['GET','POST'].includes(request.method)) throw new ApiError(405,'method_not_allowed','Méthode refusée.');
+          const headers = readCloudHeaders(request,request.method === 'POST');
+          const context = { profileId: profile.id, fingerprintHash: await hashFingerprint(headers.deviceFingerprint,dependencies.deviceFingerprintPepper), platform: headers.platform, clientVersion: headers.clientVersion };
+          const projectId = uuid(url.pathname.split('/')[3]);
+          const value = request.method === 'GET' ? await dependencies.branchRepository.list(context,projectId,requestId)
+            : await dependencies.branchRepository.change(context,projectId,readVersionCommand(await readObjectBody(request,4096)),requestId);
+          status=200;
+          return jsonResponse({contractVersion:'2026-09-v14',...value,request_id:requestId},status,requestId,origin,dependencies.allowedOrigins);
+        }
         if (normalizedRoute === '/v10/projects/:id/metadata') {
           if (!dependencies.metadataRepository) throw new ApiError(503, 'project_metadata_unavailable', 'Commentaires et premières pages indisponibles.');
           if (!['GET','POST'].includes(request.method)) throw new ApiError(405,'method_not_allowed','Méthode refusée.');

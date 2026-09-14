@@ -2,6 +2,7 @@ import { SupabaseJwksTokenVerifier } from './jwt.ts';
 import { EcdsaOfflineGrantSigner } from './offlineGrant.ts';
 import { DistributedRateLimiter } from './distributedRateLimit.ts';
 import { SupabaseProjectMetadataRepository } from './projectMetadata.ts';
+import { SupabaseProjectBranchRepository } from './projectBranches.ts';
 export { RateLimitBucket } from './distributedRateLimit.ts';
 export { StudioRealtimeChannel } from './studioRealtimeChannel.ts';
 import { SupabaseRestRepository } from './supabaseRepository.ts';
@@ -152,6 +153,7 @@ const productionWorker = {
           windowSeconds * 1_000,
         ),
         projectRepository: new SupabaseCloudProjectRepository(runtimeEnvironment),
+        branchRepository: new SupabaseProjectBranchRepository(runtimeEnvironment, scenarioStorage),
         metadataRepository,
         deviceFingerprintPepper: required(
           environment,

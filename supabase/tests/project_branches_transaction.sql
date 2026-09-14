@@ -62,6 +62,11 @@ begin
  perform public.project_branches_v14(owner_id,od,'windows','0.1.12',project,command,repeat('a',64),null,gen_random_uuid());
  perform public.authorize_studio_operation(editor_id,ed,'windows','0.1.12',child_studio,array['editor']);
  if (select current_version_id from public.cloud_scenarios where id=project)<>base then raise exception 'parent overwritten';end if;
+ command:=jsonb_build_object('action','delete','operationId',gen_random_uuid(),'versionId',project,'expectedRevision',1);
+ perform public.project_branches_v14(owner_id,od,'windows','0.1.12',project,command,repeat('b',64),null,gen_random_uuid());
+ perform public.get_studio_detail(owner_id,od,'windows','0.1.12',repeat('a',64),'Owner',studio);
+ denied:=false;begin perform public.authorize_studio_version_v14(owner_id,od,'windows','0.1.12',studio);exception when others then if sqlerrm<>'studio_not_found' then raise;end if;denied:=true;end;
+ if not denied then raise exception 'deleted initial version channel accessible';end if;
  -- Revocation on the project removes access to every branch, including a
  -- previously cached channel id. Direct table writes and helper RPCs are denied.
  perform public.remove_studio_member(owner_id,od,'windows','0.1.12',repeat('a',64),'Owner',studio,editor_id,repeat('f',64),gen_random_uuid());

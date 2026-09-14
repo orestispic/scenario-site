@@ -81,6 +81,9 @@ try {
   await call(`/v10/projects/${childProject.id}/metadata`,'editor',undefined,[404]);
   await call(path,'owner',{action:'restore',operationId:randomUUID(),versionId:blank.id,expectedRevision:2});
   await call(`/v10/projects/${childProject.id}/metadata`,'editor');
+  await call(path,'owner',{action:'delete',operationId:randomUUID(),versionId:id,expectedRevision:1});
+  await call(`/v6/studios/${studio}`,'owner');
+  await call(`${owner.prefix}/poll`,'owner',{connectionId:owner.connectionId,afterCursor:0},[404]);
   const editorId=(await call('/v1/me','editor')).account.id;
   await call(`/v6/studios/${studio}/members/${editorId}/remove`,'owner',{});
   await call(path,'editor',undefined,[404]);await call(`/v10/projects/${childProject.id}/metadata`,'editor',undefined,[404]);

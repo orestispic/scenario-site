@@ -702,18 +702,17 @@ export class SupabaseStudioRepository implements StudioRepository {
     studioId: string,
     write: boolean,
   ) {
-    const detail = await this.detail(context, studioId);
-    if (write && detail.studio.role === 'viewer')
+    const access = await this.rpc<{studioId:string;scenarioId:string;role:StudioRole}>('authorize_studio_version_v14', {
+      p_profile_id: context.profileId, p_fingerprint_hash: context.fingerprintHash,
+      p_platform: context.platform, p_client_version: context.clientVersion, p_studio_id: studioId,
+    });
+    if (write && access.role === 'viewer')
       throw new CommercialRepositoryError(
         403,
         'studio_write_forbidden',
         'Écriture Studio refusée.',
       );
-    return {
-      studioId,
-      scenarioId: detail.studio.scenarioId,
-      role: detail.studio.role,
-    };
+    return access;
   }
   list(context: StudioContext) {
     return this.rpc<StudioSpace[]>('list_studios', this.context(context));

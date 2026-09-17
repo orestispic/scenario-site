@@ -37,6 +37,7 @@ export interface WorkerEnvironment {
   OFFLINE_GRANT_PRIVATE_JWK: string;
   OFFLINE_GRANT_PUBLIC_JWK: string;
   OFFLINE_GRANT_KEY_ID: string;
+  OFFLINE_GRANT_PREVIOUS_PUBLIC_JWKS?: string;
   RATE_LIMIT_MAX_REQUESTS?: string;
   RATE_LIMIT_INGRESS_MAX_REQUESTS?: string;
   RATE_LIMIT_WINDOW_SECONDS?: string;
@@ -95,6 +96,26 @@ export interface ActivateDeviceInput {
   fingerprintHash: string;
   label: string;
   platform: 'windows' | 'macos';
+  publicKey?: JsonWebKey;
+  keyThumbprint?: string;
+  clientVersion?: string;
+}
+
+export interface DeviceProofRecord {
+  id: string;
+  profileId: string;
+  status: 'active' | 'revoked';
+  publicKey: JsonWebKey | null;
+  keyThumbprint: string | null;
+}
+
+export interface DeviceChallengeRecord {
+  id: string;
+  profileId: string;
+  deviceId: string | null;
+  purpose: 'activation' | 'license_renewal';
+  nonce: string;
+  expiresAt: string;
 }
 
 export interface CommercialRepository {
@@ -108,6 +129,16 @@ export interface CommercialRepository {
   getEntitlements(profileId: string): Promise<EntitlementRecord | null>;
   listDevices(profileId: string): Promise<DeviceView[]>;
   findActiveDevice?(profileId: string, fingerprintHash: string): Promise<DeviceView | null>;
+  getDeviceForProof(profileId: string, deviceId: string): Promise<DeviceProofRecord | null>;
+  findActiveDeviceByKey(profileId: string, keyThumbprint: string): Promise<DeviceProofRecord | null>;
+  createDeviceChallenge(input: Omit<DeviceChallengeRecord, 'id'>): Promise<DeviceChallengeRecord>;
+  consumeDeviceChallenge(profileId: string, challengeId: string, purpose: DeviceChallengeRecord['purpose'], deviceId: string | null): Promise<DeviceChallengeRecord>;
+  markDeviceSeen(profileId: string, deviceId: string, clientVersion?: string): Promise<void>;
+  recordDeviceLicense(input: {
+    id: string; profileId: string; deviceId: string; snapshotId: string;
+    keyId: string; formatVersion: number; issuedAt: string;
+    entitlementValidUntil: string; offlineValidUntil: string;
+  }): Promise<void>;
   activateDevice(
     profileId: string,
     input: ActivateDeviceInput,
@@ -150,6 +181,7 @@ export class CommercialRepositoryError extends Error {
 }
 
 export type WorkerDependencies = {
+  contactRepository?: import('./contacts.ts').ContactRepository;
   branchRepository?: import('./projectBranches.ts').ProjectBranchRepository;
   metadataRepository?: import('./projectMetadata.ts').ProjectMetadataRepository;
   projectRepository?: import('./cloudProjects.ts').CloudProjectRepository;
@@ -160,6 +192,9 @@ export type WorkerDependencies = {
   repository: CommercialRepository;
   tokenVerifier: TokenVerifier;
   offlineGrantSigner: OfflineGrantSigner;
+  offlineGrantVerificationKeys?: Record<string, JsonWebKey>;
+  /** Test harness escape hatch only. Hosted index never disables this. */
+  enforceDeviceRequestProof?: boolean;
   rateLimiter: RateLimiter;
   activationKeyPepper: string;
   billingRepository: BillingRepository;

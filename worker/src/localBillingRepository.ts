@@ -83,7 +83,7 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     unitAmountMinor: 4900,
     testMode: true,
     configurationVersion: 'local-billing-v1',
-    deviceLimit: 3,
+    deviceLimit: 2,
     offlineGraceDays: 7,
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
@@ -91,6 +91,9 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
       { code: 'ai_short_action', enabled: true, value: null },
       { code: 'ai_pdf_import', enabled: true, value: null },
       { code: 'cloud.sync', enabled: true, value: null },
+      { code: 'scenario_versions', enabled: true, value: null },
+      { code: 'scene_cards', enabled: true, value: null },
+      { code: 'pro_formats', enabled: true, value: null },
     ],
     quotaLimits: { ai_short_action: 10, ai_pdf_import: 4 },
     quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
@@ -106,7 +109,7 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
     unitAmountMinor: 49000,
     testMode: true,
     configurationVersion: 'local-billing-v1',
-    deviceLimit: 3,
+    deviceLimit: 2,
     offlineGraceDays: 7,
     entitlements: [
       { code: 'local.edit', enabled: true, value: null },
@@ -114,6 +117,9 @@ const LOCAL_CATALOG: LocalCatalogItem[] = [
       { code: 'ai_short_action', enabled: true, value: null },
       { code: 'ai_pdf_import', enabled: true, value: null },
       { code: 'cloud.sync', enabled: true, value: null },
+      { code: 'scenario_versions', enabled: true, value: null },
+      { code: 'scene_cards', enabled: true, value: null },
+      { code: 'pro_formats', enabled: true, value: null },
     ],
     quotaLimits: { ai_short_action: 10, ai_pdf_import: 4 },
     quotaPeriods: { ai_short_action: 'month', ai_pdf_import: 'month' },
@@ -278,6 +284,17 @@ export class LocalBillingRepository implements BillingRepository {
     }
     this.lastEventCreated.set(profileId, event.created);
     const current = this.billing.get(profileId) ?? emptyBilling();
+    if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
+      this.billing.set(profileId, {
+        ...current,
+        status: 'paused',
+        lastPaymentStatus: 'failed',
+        source: 'stripe',
+      });
+      this.commercial.revokePurchasedEntitlements(profileId);
+      this.processedEvents.set(event.id, _rawBody);
+      return { replayed: false };
+    }
     if (event.type.startsWith('customer.subscription.')) {
       const selection = LOCAL_CATALOG.find(
         (item) =>

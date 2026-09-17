@@ -224,7 +224,7 @@ test('hosted HTTP routes cannot fall back to legacy quota; usage is identity-bou
   await reset();
   const budgets = await repository.command<TokenBudgets>(profile, 'usage');
   let legacyCalls = 0;
-  const closed = await createLocalRuntime({ environment: 'staging', aiProvider: { execute: async () => { legacyCalls++; return { kind: 'text', text: 'unsafe' }; } } });
+  const closed = await createLocalRuntime({ environment: 'staging', enforceDeviceRequestProof: false, aiProvider: { execute: async () => { legacyCalls++; return { kind: 'text', text: 'unsafe' }; } } });
   function request(path: string, body?: object, auth = 'local-test:author') {
     return new Request(`http://localhost${path}`, { method: body ? 'POST' : 'GET',
       headers: { Authorization: `Bearer ${auth}`, Origin: 'http://localhost:3000', 'Content-Type': 'application/json',
@@ -234,7 +234,7 @@ test('hosted HTTP routes cannot fall back to legacy quota; usage is identity-bou
   assert.equal((await closed.worker.fetch(request('/v4/ai/actions', input.request))).status, 503);
   assert.equal(legacyCalls, 0);
   const identities: string[] = [];
-  const runtime = await createLocalRuntime({ environment: 'staging', aiProvider: undefined, aiQuotaRepository: undefined,
+  const runtime = await createLocalRuntime({ environment: 'staging', enforceDeviceRequestProof: false, aiProvider: undefined, aiQuotaRepository: undefined,
     aiTokens: { repository: { async command<T>(id: string, action: string): Promise<T> { identities.push(id); assert.equal(action, 'usage'); return budgets as T; } },
       provider: { count: async () => { throw new Error('must not count'); }, generate: async () => { throw new Error('must not generate'); } } } });
   assert.equal((await runtime.worker.fetch(request('/v4/ai/usage'))).status, 200);

@@ -61,6 +61,11 @@ export async function metadataFixture() {
       ).status,
       201,
     );
+  for (const p of ['author', 'discovery'] as const) {
+    assert.equal((await call('/v15/contact-requests', 'studio', { email: `${p}@example.invalid` })).status, 201);
+    const received = await (await call('/v15/contacts', p)).json() as { receivedRequests: Array<{ id: string }> };
+    assert.equal((await call(`/v15/contact-requests/${received.receivedRequests[0].id}/respond`, p, { decision: 'accept' })).status, 200);
+  }
   async function create(title: string, metadata: Record<string, unknown> = {}) {
     const content = JSON.stringify({
       formatVersion: 1,

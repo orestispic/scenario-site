@@ -23,6 +23,7 @@ import {
 import { DeterministicLocalRealtimeTransport } from './realtimeCollaboration.ts';
 import { LocalCloudProjectRepository } from './cloudProjects.ts';
 import { LocalProjectMetadataRepository } from './projectMetadata.ts';
+import { LocalContactRepository } from './contacts.ts';
 
 export async function createLocalRuntime(
   overrides: Partial<WorkerDependencies> = {},
@@ -36,10 +37,12 @@ export async function createLocalRuntime(
   const cloudRepository = new LocalCloudScenarioRepository(repository, now);
   const scenarioStorage = new LocalScenarioObjectStorage(now);
   const studioNotifier = new DeterministicLocalStudioNotifier();
+  const contactRepository = new LocalContactRepository(repository, now, (a, b) => studioRepository.revokeContactAccess(a, b));
   const studioRepository = new LocalStudioRepository(
     repository,
     cloudRepository,
     now,
+    (a, b) => contactRepository.hasAccepted(a, b),
   );
   const realtimeTransport = new DeterministicLocalRealtimeTransport(
     studioRepository,
@@ -67,6 +70,8 @@ export async function createLocalRuntime(
       'http://127.0.0.1:3000',
       'http://localhost:1420',
       'http://127.0.0.1:1420',
+      'http://localhost:4173',
+      'http://127.0.0.1:4173',
     ],
     repository,
     tokenVerifier: {
@@ -98,6 +103,7 @@ export async function createLocalRuntime(
     cloudIdempotencyPepper: 'ephemeral-local-cloud-idempotency-pepper',
     cloudPolicy: { maximumBodyBytes: 4_194_304, downloadTtlSeconds: 300 },
     studioRepository,
+    contactRepository,
     studioNotifier,
     projectRepository: new LocalCloudProjectRepository(cloudRepository, studioRepository),
     metadataRepository,
@@ -114,6 +120,7 @@ export async function createLocalRuntime(
     cloudRepository,
     scenarioStorage,
     studioRepository,
+    contactRepository,
     studioNotifier,
     realtimeTransport,
     worker,

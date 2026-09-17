@@ -16,6 +16,7 @@ type JwtPayload = {
   iss?: string;
   exp?: number;
   nbf?: number;
+  session_id?: string;
 };
 type Jwks = { keys?: JsonWebKey[] };
 
@@ -58,6 +59,7 @@ export class SupabaseJwksTokenVerifier implements TokenVerifier {
     private readonly audience = 'authenticated',
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = () => Date.now(),
+    private readonly checkActiveSession?: (authUserId: string, sessionId: string) => Promise<void>,
   ) {}
 
   async verify(
@@ -112,18 +114,24 @@ export class SupabaseJwksTokenVerifier implements TokenVerifier {
     const nowSeconds = Math.floor(this.now() / 1000);
     const issuer = `${this.supabaseUrl.replace(/\/$/, '')}/auth/v1`;
     if (
-      !payload.sub ||
+      typeof payload.sub !== 'string' || !payload.sub ||
       payload.iss !== issuer ||
       !audienceMatches(payload.aud, this.audience)
     ) {
       throw new AuthenticationError('Claims de jeton invalides.');
     }
     if (
-      !payload.exp ||
+      typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) ||
       payload.exp <= nowSeconds ||
-      (payload.nbf !== undefined && payload.nbf > nowSeconds)
+      (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || !Number.isFinite(payload.nbf) || payload.nbf > nowSeconds))
     ) {
       throw new AuthenticationError('Jeton expiré ou pas encore valide.');
+    }
+    if (this.checkActiveSession) {
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (typeof payload.session_id !== 'string' || !uuid.test(payload.session_id) || !uuid.test(payload.sub))
+        throw new AuthenticationError('Session invalide.');
+      await this.checkActiveSession(payload.sub, payload.session_id);
     }
     return { authUserId: payload.sub, accessToken: token };
   }

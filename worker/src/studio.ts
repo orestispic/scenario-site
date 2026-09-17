@@ -85,6 +85,7 @@ export interface StudioRepository extends StudioEventChannel {
     context: StudioContext;
     studioId: string;
     recipientEmailHash: string;
+    recipientProfileId: string;
     recipientMasked: string;
     role: Exclude<StudioRole, 'owner'>;
     tokenHash: string;
@@ -146,6 +147,7 @@ export interface StudioRepository extends StudioEventChannel {
 type StoredStudio = StudioSpace & { ownerId: string };
 type StoredInvitation = StudioInvitationView & {
   recipientEmailHash: string;
+  recipientProfileId: string;
   tokenHash: string;
 };
 
@@ -179,6 +181,7 @@ export class LocalStudioRepository implements StudioRepository {
     private readonly commercial: LocalTestRepository,
     private readonly cloud: CloudScenarioRepository,
     private readonly now: () => number = Date.now,
+    private readonly contactsAccepted: (a: string, b: string) => boolean = () => false,
   ) {}
 
   async authorizeRealtime(
@@ -218,7 +221,10 @@ export class LocalStudioRepository implements StudioRepository {
     };
   }
   async receivedInvitations(context: StudioContext) {
-    await this.authorize(context);
+    // A project invitation is deliberately visible to a valid Senario account
+    // before it has any paid Cloud/Studio entitlement. The cloud repository
+    // still validates the device and minimum client version here.
+    await this.cloud.list(context);
     return [...this.invitations.values()]
       .filter(
         (item) =>
@@ -296,6 +302,7 @@ export class LocalStudioRepository implements StudioRepository {
   }
   async invite(input: Parameters<StudioRepository['invite']>[0]) {
     await this.requireOwner(input.context, input.studioId);
+    this.requireContact(input.context.profileId, input.recipientProfileId);
     return this.idempotent(
       input.context.profileId,
       input.idempotencyHash,
@@ -317,6 +324,7 @@ export class LocalStudioRepository implements StudioRepository {
           studioId: input.studioId,
           recipient: input.recipientMasked,
           recipientEmailHash: input.recipientEmailHash,
+          recipientProfileId: input.recipientProfileId,
           tokenHash: input.tokenHash,
           role: input.role,
           status: 'pending',
@@ -334,6 +342,13 @@ export class LocalStudioRepository implements StudioRepository {
   }
   async accept(input: Parameters<StudioRepository['accept']>[0]) {
     await this.authorize(input.context);
+    return this.acceptAuthorized(input);
+  }
+  private acceptAuthorized(input: Parameters<StudioRepository['accept']>[0]) {
+    const target = this.findToken(input.tokenHash);
+    const host = this.requireStudio(target.studioId);
+    if (target.recipientProfileId !== input.context.profileId) throw this.notFound();
+    this.requireContact(host.ownerId, input.context.profileId);
     return this.idempotent(
       input.context.profileId,
       input.idempotencyHash,
@@ -370,6 +385,9 @@ export class LocalStudioRepository implements StudioRepository {
   }
   async decline(input: Parameters<StudioRepository['decline']>[0]) {
     await this.authorize(input.context);
+    return this.declineAuthorized(input);
+  }
+  private declineAuthorized(input: Parameters<StudioRepository['decline']>[0]) {
     return this.idempotent(
       input.context.profileId,
       input.idempotencyHash,
@@ -584,6 +602,7 @@ export class LocalStudioRepository implements StudioRepository {
     const {
       tokenHash: _tokenHash,
       recipientEmailHash: _emailHash,
+      recipientProfileId: _recipientProfileId,
       ...value
     } = item;
     return structuredClone(value);
@@ -658,14 +677,48 @@ export class LocalStudioRepository implements StudioRepository {
     const active = studio ? [...(this.members.get(studio.id)?.values() ?? [])].filter((m) => m.status === 'active') : [];
     return { memberCount: Math.max(1, active.length), studioId: studio && active.some((m) => m.profileId === profileId) ? studio.id : null };
   }
+  private requireContact(a: string, b: string) {
+    if (!this.contactsAccepted(a, b)) throw new CommercialRepositoryError(403, 'contact_required', 'Un contact accepté est nécessaire.');
+  }
+  revokeContactAccess(a: string, b: string) {
+    for (const studio of this.studios.values()) {
+      const target = studio.ownerId === a ? b : studio.ownerId === b ? a : null;
+      if (!target) continue;
+      for (const invitation of this.invitations.values()) {
+        if (invitation.studioId === studio.id && invitation.recipientProfileId === target && invitation.status === 'pending') {
+          invitation.status = 'revoked'; this.bump(studio.id, 'invitation.revoked', invitation.id);
+        }
+      }
+      const member = this.members.get(studio.id)?.get(target);
+      if (!member || member.status !== 'active') continue;
+      const revoked = this.membership(studio.id, target, member.displayName, member.role, 'revoked', member.revision + 1);
+      this.members.get(studio.id)!.set(target, revoked);
+      this.membershipJournal.push(structuredClone(revoked));
+      (this.cloud as { removeMembership?: (id: string, profile: string) => void }).removeMembership?.(studio.scenarioId, target);
+      this.bump(studio.id, 'membership.removed', target);
+    }
+  }
   async respondToProjectInvitation(input: { context: StudioContext; invitationId: string; decision: 'accept' | 'decline'; idempotencyHash: string; requestId: string }): Promise<{ responded: true; replayed: boolean }> {
-    await this.authorize(input.context);
+    // Unlike the generic Studio endpoints, this project-specific route is the
+    // guest entry point. It must let an invited viewer accept without granting
+    // the recipient the Studio offer itself.
+    await this.cloud.list(input.context);
     const invitation = this.invitations.get(input.invitationId);
     if (!invitation || invitation.recipientEmailHash !== input.context.emailHash) throw this.notFound();
     const studio = this.requireStudio(invitation.studioId);
     // The recipient cannot list the project before accepting; check its lifecycle internally.
     if (!(this.cloud as { projectIsActive?: (id: string) => boolean }).projectIsActive?.(studio.scenarioId)) throw this.notFound();
-    const value = await this[input.decision]({ ...input, tokenHash: invitation.tokenHash });
+    if (input.decision === 'accept' && invitation.role !== 'viewer') {
+      try { await this.authorize(input.context); }
+      catch (error) {
+        if (error instanceof CommercialRepositoryError && ['cloud_entitlement_missing', 'studio_entitlement_missing'].includes(error.code))
+          throw new CommercialRepositoryError(403, 'studio_entitlement_missing', 'Un rôle éditeur nécessite l’offre Studio.');
+        throw error;
+      }
+    }
+    const value = input.decision === 'accept'
+      ? this.acceptAuthorized({ ...input, tokenHash: invitation.tokenHash })
+      : this.declineAuthorized({ ...input, tokenHash: invitation.tokenHash });
     return { responded: true, replayed: value.replayed };
   }
   private idempotent<T extends { replayed: boolean }>(
@@ -736,7 +789,7 @@ export class SupabaseStudioRepository implements StudioRepository {
   }
   invite(input: Parameters<StudioRepository['invite']>[0]) {
     return this.mutate<{ invitation: StudioInvitationView; replayed: boolean }>(
-      'create_studio_invitation',
+      'create_contact_project_invitation_v16',
       input,
     );
   }
@@ -839,6 +892,7 @@ export class SupabaseStudioRepository implements StudioRepository {
     if (!response.ok) {
       const text = await response.text();
       const code = [
+        'contact_required',
         'studio_entitlement_missing',
         'studio_device_inactive',
         'client_update_required',
@@ -850,7 +904,7 @@ export class SupabaseStudioRepository implements StudioRepository {
         'studio_idempotency_conflict',
       ].find((item) => text.includes(item));
       throw new CommercialRepositoryError(
-        code === 'client_update_required'
+        code === 'contact_required' ? 403 : code === 'client_update_required'
           ? 426
           : code === 'invitation_expired'
             ? 410

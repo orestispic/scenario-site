@@ -6,10 +6,13 @@ import type {
 import type {
   ActivateDeviceInput,
   CommercialRepository,
+  DeviceChallengeRecord,
+  DeviceProofRecord,
   EntitlementRecord,
   ProfileRecord,
   WorkerEnvironment,
 } from './types.ts';
+import { CommercialRepositoryError } from './types.ts';
 import { supabaseAdminHeaders } from './supabaseAdmin.ts';
 import { detachedFetch } from './detachedFetch.ts';
 
@@ -26,6 +29,18 @@ type DatabaseDevice = {
   platform: DeviceView['platform'];
   status: DeviceView['status'];
   last_seen_at: string;
+  first_activated_at: string;
+  client_version: string | null;
+  public_key_jwk: JsonWebKey | null;
+  key_thumbprint: string | null;
+};
+type DatabaseDeviceChallenge = {
+  id: string;
+  user_id: string;
+  device_id: string | null;
+  purpose: DeviceChallengeRecord['purpose'];
+  nonce: string;
+  expires_at: string;
 };
 type DatabaseSnapshot = {
   id: string;
@@ -124,14 +139,14 @@ export class SupabaseRestRepository implements CommercialRepository {
 
   async listDevices(profileId: string): Promise<DeviceView[]> {
     const rows = await this.read<DatabaseDevice[]>(
-      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&select=id,label,platform,status,last_seen_at&order=created_at.asc`,
+      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&select=id,label,platform,status,last_seen_at,first_activated_at,client_version,public_key_jwk,key_thumbprint&order=created_at.asc`,
     );
     return rows.map(this.mapDevice);
   }
 
   async findActiveDevice(profileId: string, fingerprintHash: string): Promise<DeviceView | null> {
     const rows = await this.read<DatabaseDevice[]>(
-      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&device_fingerprint_hash=eq.${encodeURIComponent(fingerprintHash)}&status=eq.active&select=id,label,platform,status,last_seen_at&limit=1`,
+      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&device_fingerprint_hash=eq.${encodeURIComponent(fingerprintHash)}&status=eq.active&select=id,label,platform,status,last_seen_at,first_activated_at,client_version,public_key_jwk,key_thumbprint&limit=1`,
     );
     return rows[0] ? this.mapDevice(rows[0]) : null;
   }
@@ -140,27 +155,92 @@ export class SupabaseRestRepository implements CommercialRepository {
     profileId: string,
     input: ActivateDeviceInput,
   ): Promise<DeviceView> {
-    const row = await this.write<DatabaseDevice>(
-      '/rest/v1/rpc/activate_device',
-      {
-        p_profile_id: profileId,
-        p_device_fingerprint_hash: input.fingerprintHash,
-        p_platform: input.platform,
-        p_label: input.label,
-      },
-    );
+    const row = input.publicKey && input.keyThumbprint && input.clientVersion
+      ? await this.write<DatabaseDevice>('/rest/v1/rpc/activate_device_v2', {
+          p_profile_id: profileId,
+          p_device_fingerprint_hash: input.fingerprintHash,
+          p_key_thumbprint: input.keyThumbprint,
+          p_public_key_jwk: input.publicKey,
+          p_platform: input.platform,
+          p_label: input.label,
+          p_client_version: input.clientVersion,
+        })
+      : await this.write<DatabaseDevice>('/rest/v1/rpc/activate_device', {
+          p_profile_id: profileId,
+          p_device_fingerprint_hash: input.fingerprintHash,
+          p_platform: input.platform,
+          p_label: input.label,
+        });
     return this.mapDevice(row);
   }
 
   async deactivateDevice(profileId: string, deviceId: string): Promise<void> {
+    await this.write('/rest/v1/rpc/deactivate_device_v2', {
+      p_profile_id: profileId,
+      p_device_id: deviceId,
+    });
+  }
+
+  async getDeviceForProof(profileId: string, deviceId: string): Promise<DeviceProofRecord | null> {
+    const rows = await this.read<DatabaseDevice[]>(
+      `/rest/v1/devices?id=eq.${encodeURIComponent(deviceId)}&user_id=eq.${encodeURIComponent(profileId)}&select=id,status,public_key_jwk,key_thumbprint,label,platform,last_seen_at,first_activated_at,client_version&limit=1`,
+    );
+    const row = rows[0];
+    return row ? { id: row.id, profileId, status: row.status, publicKey: row.public_key_jwk, keyThumbprint: row.key_thumbprint } : null;
+  }
+
+  async findActiveDeviceByKey(profileId: string, keyThumbprint: string): Promise<DeviceProofRecord | null> {
+    const rows = await this.read<DatabaseDevice[]>(
+      `/rest/v1/devices?user_id=eq.${encodeURIComponent(profileId)}&key_thumbprint=eq.${encodeURIComponent(keyThumbprint)}&status=eq.active&select=id,status,public_key_jwk,key_thumbprint,label,platform,last_seen_at,first_activated_at,client_version&limit=1`,
+    );
+    const row = rows[0];
+    return row ? { id: row.id, profileId, status: row.status, publicKey: row.public_key_jwk, keyThumbprint: row.key_thumbprint } : null;
+  }
+
+  async createDeviceChallenge(input: Omit<DeviceChallengeRecord, 'id'>): Promise<DeviceChallengeRecord> {
+    const row = await this.write<DatabaseDeviceChallenge>('/rest/v1/device_challenges', {
+      user_id: input.profileId,
+      device_id: input.deviceId,
+      purpose: input.purpose,
+      nonce: input.nonce,
+      expires_at: input.expiresAt,
+    });
+    return this.mapChallenge(row);
+  }
+
+  async consumeDeviceChallenge(profileId: string, challengeId: string, purpose: DeviceChallengeRecord['purpose'], deviceId: string | null): Promise<DeviceChallengeRecord> {
+    const row = await this.write<DatabaseDeviceChallenge>('/rest/v1/rpc/consume_device_challenge', {
+      p_profile_id: profileId,
+      p_challenge_id: challengeId,
+      p_purpose: purpose,
+      p_device_id: deviceId,
+    });
+    return this.mapChallenge(row);
+  }
+
+  async markDeviceSeen(profileId: string, deviceId: string, clientVersion?: string): Promise<void> {
     await this.write(
-      `/rest/v1/devices?id=eq.${encodeURIComponent(deviceId)}&user_id=eq.${encodeURIComponent(profileId)}`,
-      {
-        status: 'revoked',
-        revoked_at: new Date().toISOString(),
-      },
+      `/rest/v1/devices?id=eq.${encodeURIComponent(deviceId)}&user_id=eq.${encodeURIComponent(profileId)}&status=eq.active`,
+      { last_seen_at: new Date().toISOString(), ...(clientVersion ? { client_version: clientVersion.slice(0, 40) } : {}) },
       'PATCH',
     );
+  }
+
+  async recordDeviceLicense(input: {
+    id: string; profileId: string; deviceId: string; snapshotId: string; keyId: string;
+    formatVersion: number; issuedAt: string; entitlementValidUntil: string; offlineValidUntil: string;
+  }): Promise<void> {
+    await this.write('/rest/v1/device_licenses', {
+      id: input.id,
+      user_id: input.profileId,
+      device_id: input.deviceId,
+      entitlement_snapshot_id: input.snapshotId,
+      key_id: input.keyId,
+      format_version: input.formatVersion,
+      issued_at: input.issuedAt,
+      entitlement_valid_until: input.entitlementValidUntil,
+      offline_valid_until: input.offlineValidUntil,
+    });
   }
 
   async getUsage(profileId: string): Promise<UsageView[]> {
@@ -220,6 +300,18 @@ export class SupabaseRestRepository implements CommercialRepository {
     platform: row.platform,
     status: row.status,
     lastSeenAt: row.last_seen_at,
+    firstActivatedAt: row.first_activated_at,
+    clientVersion: row.client_version,
+    hasCryptographicIdentity: Boolean(row.public_key_jwk && row.key_thumbprint),
+  });
+
+  private readonly mapChallenge = (row: DatabaseDeviceChallenge): DeviceChallengeRecord => ({
+    id: row.id,
+    profileId: row.user_id,
+    deviceId: row.device_id,
+    purpose: row.purpose,
+    nonce: row.nonce,
+    expiresAt: row.expires_at,
   });
 
   private async read<T>(path: string): Promise<T> {
@@ -286,8 +378,20 @@ export class SupabaseRestRepository implements CommercialRepository {
         body: JSON.stringify(body),
       },
     );
-    if (!response.ok)
+    if (!response.ok) {
+      let message = '';
+      try {
+        const errorBody = (await response.json()) as { message?: unknown };
+        message = typeof errorBody.message === 'string' ? errorBody.message : '';
+      } catch { /* response body is optional */ }
+      const code = [
+        'device_limit_reached', 'device_not_found', 'device_challenge_invalid',
+        'device_challenge_consumed', 'device_challenge_expired',
+        'missing_device_entitlement', 'invalid_device_key', 'device_identity_conflict',
+      ].find(candidate => message.includes(candidate));
+      if (code) throw new CommercialRepositoryError(code === 'device_not_found' ? 404 : ['device_limit_reached', 'device_identity_conflict', 'device_challenge_consumed'].includes(code) ? 409 : 400, code, code);
       throw new RepositoryError(`Database write failed (${response.status})`);
+    }
     const value = (await response.json()) as T | T[];
     return (Array.isArray(value) ? value[0] : value) as T;
   }

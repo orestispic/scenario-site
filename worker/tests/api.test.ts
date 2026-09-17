@@ -155,8 +155,17 @@ describe('API commerciale v1', () => {
     const response = await request('/v1/entitlements', 'studio');
     assert.equal(response.status, 200);
     const body = (await response.json()) as {
+      snapshot: { entitlements: Array<{ code: string; enabled: boolean }> };
       offlineGrant: SignedOfflineGrant;
     };
+    const studioRights = new Set(
+      body.snapshot.entitlements
+        .filter(({ enabled }) => enabled)
+        .map(({ code }) => code),
+    );
+    assert.equal(studioRights.has('pro_formats'), true);
+    assert.equal(studioRights.has('scenario_versions'), true);
+    assert.equal(studioRights.has('scene_cards'), true);
     const key = await crypto.subtle.importKey(
       'jwk',
       config.offlineGrantPublicKey,
@@ -227,6 +236,18 @@ describe('API commerciale v1', () => {
       ),
       false,
     );
+    for (const studioOnlyCode of [
+      'pro_formats',
+      'scenario_versions',
+      'scene_cards',
+    ]) {
+      assert.equal(
+        entitlements.snapshot.entitlements.some(
+          ({ code }) => code === studioOnlyCode,
+        ),
+        false,
+      );
+    }
   });
 
   it('couvre appareils, usage et déconnexion', async () => {

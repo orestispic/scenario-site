@@ -88,6 +88,11 @@ async function fixture() {
       201,
     );
   }
+  for (const profile of ['author', 'discovery'] as const) {
+    assert.equal((await call('/v15/contact-requests', 'studio', { email: `${profile}@example.invalid` })).status, 201);
+    const received = await (await call('/v15/contacts', profile)).json() as { receivedRequests: Array<{ id: string }> };
+    assert.equal((await call(`/v15/contact-requests/${received.receivedRequests[0].id}/respond`, profile, { decision: 'accept' })).status, 200);
+  }
   const content = JSON.stringify({
     formatVersion: 1,
     title: 'Fixture',

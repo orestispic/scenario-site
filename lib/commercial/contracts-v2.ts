@@ -36,6 +36,7 @@ export interface PublicConfiguration {
   compatibility: ClientCompatibility[];
   offlineGrantPublicKey: JsonWebKey;
   offlineGrantKeyId: string;
+  offlineGrantPublicKeys?: Record<string, JsonWebKey>;
 }
 
 export interface MeResponse {
@@ -54,6 +55,16 @@ export interface DeviceView {
   platform: "windows" | "macos";
   status: "active" | "revoked";
   lastSeenAt: string;
+  firstActivatedAt?: string;
+  clientVersion?: string | null;
+  hasCryptographicIdentity?: boolean;
+}
+
+export interface DeviceChallenge {
+  id: string;
+  purpose: "activation" | "license_renewal";
+  message: string;
+  expiresAt: string;
 }
 
 export interface UsageView {

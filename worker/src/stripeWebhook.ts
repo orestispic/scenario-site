@@ -8,7 +8,9 @@ export interface VerifiedStripeEvent {
     | 'customer.subscription.updated'
     | 'customer.subscription.deleted'
     | 'invoice.paid'
-    | 'invoice.payment_failed';
+    | 'invoice.payment_failed'
+    | 'charge.refunded'
+    | 'charge.dispute.created';
   created: number;
   livemode: boolean;
   data: { object: Record<string, unknown> };
@@ -117,6 +119,8 @@ export class StripeWebhookVerifier implements StripeWebhookVerifierPort {
       'customer.subscription.deleted',
       'invoice.paid',
       'invoice.payment_failed',
+      'charge.refunded',
+      'charge.dispute.created',
     ]);
     if (
       typeof event.id !== 'string' ||

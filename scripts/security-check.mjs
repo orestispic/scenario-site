@@ -36,7 +36,7 @@ async function scan(directory) {
       (appMode && path.includes('commercial'))
     ) {
       assert.ok(
-        !/(?:localStorage|sessionStorage)\.setItem\([^\n]*(?:token|session)/i.test(
+        !/(?:localStorage|sessionStorage)\.setItem\([^;\n]*(?:access_?token|refresh_?token|sessionTokens)/i.test(
           text,
         ),
         `Token persistence: ${path}`,

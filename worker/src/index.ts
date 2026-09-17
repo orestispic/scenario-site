@@ -1,4 +1,5 @@
 import { SupabaseJwksTokenVerifier } from './jwt.ts';
+import { createActiveSessionCheck } from './activeSession.ts';
 import { EcdsaOfflineGrantSigner } from './offlineGrant.ts';
 import { DistributedRateLimiter } from './distributedRateLimit.ts';
 import { SupabaseProjectMetadataRepository } from './projectMetadata.ts';
@@ -29,6 +30,7 @@ import {
   SupabaseCollaborationSnapshotPersistence,
 } from './collaborationLedger.ts';
 import { normalizeHostedSupabaseUrl } from './supabaseAdmin.ts';
+import { SupabaseContactRepository } from './contacts.ts';
 
 function required(
   environment: WorkerEnvironment,
@@ -100,6 +102,11 @@ const productionWorker = {
           required(environment, 'OFFLINE_GRANT_PUBLIC_JWK'),
         ) as JsonWebKey,
       );
+      const previousOfflineKeys = Object.fromEntries(Object.entries(
+        environment.OFFLINE_GRANT_PREVIOUS_PUBLIC_JWKS
+          ? JSON.parse(environment.OFFLINE_GRANT_PREVIOUS_PUBLIC_JWKS) as Record<string, JsonWebKey>
+          : {},
+      ).map(([keyId, jwk]) => [keyId, { ...jwk, d: undefined }]));
       const cloudRepository = new SupabaseCloudScenarioRepository(
         runtimeEnvironment,
       );
@@ -138,8 +145,12 @@ const productionWorker = {
         tokenVerifier: new SupabaseJwksTokenVerifier(
           runtimeEnvironment.SUPABASE_URL,
           environment.SUPABASE_JWT_AUDIENCE,
+          fetch,
+          Date.now,
+          createActiveSessionCheck(runtimeEnvironment),
         ),
         offlineGrantSigner: signer,
+        offlineGrantVerificationKeys: previousOfflineKeys,
         rateLimiter: new DistributedRateLimiter(
           environment.RATE_LIMITER,
           required(environment, 'RATE_LIMIT_KEY_PEPPER'),
@@ -153,6 +164,7 @@ const productionWorker = {
           windowSeconds * 1_000,
         ),
         projectRepository: new SupabaseCloudProjectRepository(runtimeEnvironment),
+        contactRepository: new SupabaseContactRepository(runtimeEnvironment),
         branchRepository: new SupabaseProjectBranchRepository(runtimeEnvironment, scenarioStorage),
         metadataRepository,
         deviceFingerprintPepper: required(

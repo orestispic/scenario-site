@@ -158,6 +158,21 @@ async function addMember(
   );
 }
 
+async function addContact(runtime: LocalDemoRuntime, profile: 'author' | 'discovery') {
+  await requireSuccess(
+    await demoRequest(runtime, '/v15/contact-requests', 'studio', { email: `${profile}@example.invalid` }),
+    `demande de contact ${profile}`,
+  );
+  const list = await requireSuccess(await demoRequest(runtime, '/v15/contacts', profile), `lecture des contacts ${profile}`);
+  const requests = (await list.json()) as { receivedRequests: Array<{ id: string; profileId: string }> };
+  const request = requests.receivedRequests.find((item) => item.profileId === PROFILE_IDS.studio);
+  if (!request) throw new Error(`Demande de contact locale absente (${profile}).`);
+  await requireSuccess(
+    await demoRequest(runtime, `/v15/contact-requests/${request.id}/respond`, profile, { decision: 'accept' }),
+    `acceptation du contact ${profile}`,
+  );
+}
+
 /** Seeds only the isolated local-test Worker. No production entry point imports it. */
 export async function seedLocalDemoStudio(runtime: LocalDemoRuntime) {
   grantDemoCollaboration(runtime);
@@ -212,6 +227,8 @@ export async function seedLocalDemoStudio(runtime: LocalDemoRuntime) {
     const { studio } = (await createdResponse.json()) as {
       studio: { id: string };
     };
+    await addContact(runtime, 'author');
+    await addContact(runtime, 'discovery');
     await addMember(runtime, studio.id, 'author', 'editor');
     await addMember(runtime, studio.id, 'discovery', 'viewer');
     return { studioId: studio.id, scenarioId: LOCAL_DEMO_SCENARIO_ID };

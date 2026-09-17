@@ -149,6 +149,34 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
   async authorize(
     context: CloudAccessContext,
   ): Promise<{ snapshotId: string }> {
+    await this.authorizeRead(context);
+    const entitlements = await this.commercial.getEntitlements(
+      context.profileId,
+    );
+    if (
+      !hasRight(entitlements, 'cloud_sync') &&
+      !hasRight(entitlements, 'cloud.sync')
+    )
+      throw new CommercialRepositoryError(
+        403,
+        'cloud_entitlement_missing',
+        'Synchronisation cloud non autorisée.',
+      );
+    if (!hasRight(entitlements, 'scenario_versions'))
+      throw new CommercialRepositoryError(
+        403,
+        'cloud_entitlement_missing',
+        'Historique cloud non autorisé.',
+      );
+    return { snapshotId: entitlements!.snapshot.id };
+  }
+
+  /**
+   * A shared project remains readable for an invited account even when that
+   * account does not own the Cloud or Studio offer. The active-device and
+   * client-version checks still apply; membership is checked by each read.
+   */
+  private async authorizeRead(context: CloudAccessContext): Promise<void> {
     if (
       compareVersions(
         context.clientVersion,
@@ -172,25 +200,6 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
         'cloud_device_inactive',
         'Appareil non autorisé.',
       );
-    const entitlements = await this.commercial.getEntitlements(
-      context.profileId,
-    );
-    if (
-      !hasRight(entitlements, 'cloud_sync') &&
-      !hasRight(entitlements, 'cloud.sync')
-    )
-      throw new CommercialRepositoryError(
-        403,
-        'cloud_entitlement_missing',
-        'Synchronisation cloud non autorisée.',
-      );
-    if (!hasRight(entitlements, 'scenario_versions'))
-      throw new CommercialRepositoryError(
-        403,
-        'cloud_entitlement_missing',
-        'Historique cloud non autorisé.',
-      );
-    return { snapshotId: entitlements!.snapshot.id };
   }
 
   async sync(input: Parameters<CloudScenarioRepository['sync']>[0]) {
@@ -295,7 +304,7 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
   }
 
   async list(context: CloudAccessContext): Promise<CloudScenario[]> {
-    await this.authorize(context);
+    await this.authorizeRead(context);
     return [...this.scenarios.values()]
       .filter((value) => this.role(value, context.profileId) !== null)
       .map((value) => this.publicScenario(value, context.profileId));
@@ -305,7 +314,7 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
     context: CloudAccessContext,
     scenarioId: string,
   ): Promise<CloudScenarioVersion[]> {
-    await this.authorize(context);
+    await this.authorizeRead(context);
     this.requireRead(scenarioId, context.profileId);
     return (this.versionsByScenario.get(scenarioId) ?? []).map((item) =>
       this.stripStorage(item),
@@ -410,7 +419,7 @@ export class LocalCloudScenarioRepository implements CloudScenarioRepository {
     scenarioId: string,
     versionId: string,
   ): Promise<string> {
-    await this.authorize(context);
+    await this.authorizeRead(context);
     this.requireRead(scenarioId, context.profileId);
     return this.requireStoredVersion(scenarioId, versionId).storageKey;
   }

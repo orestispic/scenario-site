@@ -15,6 +15,7 @@ export interface CloudProjectVersion {
 export type VersionCommand = { action: 'duplicate' | 'blank' | 'rename' | 'delete' | 'restore'; operationId: string;
   name?: string; sourceVersionId?: string; versionId?: string; expectedRevision?: number };
 export interface ProjectBranchRepository {
+  readDocument(context: CloudAccessContext, scenarioId: string): Promise<Record<string, unknown>>;
   list(context: CloudAccessContext, projectId: string, requestId: string): Promise<{ versions: CloudProjectVersion[] }>;
   change(context: CloudAccessContext, projectId: string, command: VersionCommand, requestId: string): Promise<{ version: CloudProjectVersion; replayed: boolean }>;
 }
@@ -48,6 +49,36 @@ interface BranchRpcResponse {
 
 export class SupabaseProjectBranchRepository implements ProjectBranchRepository {
   constructor(private readonly environment: WorkerEnvironment, private readonly storage: ScenarioObjectStorage, private readonly fetcher: typeof fetch = fetch) {}
+  async readDocument(context: CloudAccessContext, scenarioId: string): Promise<Record<string, unknown>> {
+    const read = async () => {
+      const response = await detachedFetch(this.fetcher, `${this.environment.SUPABASE_URL.replace(/\/$/,'')}/rest/v1/rpc/read_project_document_v16`, {
+        method:'POST', headers:{...supabaseAdminHeaders(this.environment),'Content-Type':'application/json'},
+        body:JSON.stringify({p_profile_id:context.profileId,p_fingerprint_hash:context.fingerprintHash,p_platform:context.platform,p_client_version:context.clientVersion,p_scenario_id:scenarioId}),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        const code = Object.keys(messages).find(key => detail.includes(key)) ?? (detail.includes('not_found') ? 'project_not_found' : 'document_unavailable');
+        throw new CommercialRepositoryError(code === 'client_update_required' ? 426 : code.includes('not_found') ? 404 : code.includes('missing') || code.includes('inactive') ? 403 : 503, code, 'Document indisponible. Vérifiez votre accès puis réessayez.');
+      }
+      return (await response.json() as BranchRpcResponse).source;
+    };
+    const source = await read();
+    if (!source || !Number.isSafeInteger(source.sizeBytes) || source.sizeBytes < 2 || source.sizeBytes > 4194304)
+      throw new CommercialRepositoryError(409,'branch_invalid','Source invalide.');
+    const bytes = await this.storage.get(source.storageKey);
+    if (bytes.length !== source.sizeBytes || await hash(bytes) !== source.checksum)
+      throw new CommercialRepositoryError(409,'branch_invalid','Intégrité de la source invalide.');
+    const document = JSON.parse(new TextDecoder().decode(mergeCollaborationSnapshot(bytes, {
+      snapshotId:'',versionId:'',parentVersionId:'',channelCursor:0,operationIds:[],entries:source.entries,
+    }))) as Record<string,unknown>;
+    if (source.registers) Object.assign(document,metadataFromRegisters(source.registers));
+    seedMetadata(document);
+    if (new TextEncoder().encode(JSON.stringify(document)).length > 33554432)
+      throw new CommercialRepositoryError(413,'document_too_large','Le document est trop volumineux pour être téléchargé.');
+    // Access can be revoked while object storage is loading. Recheck before delivery.
+    await read();
+    return document;
+  }
   async list(context: CloudAccessContext, projectId: string, requestId: string) {
     const result = await this.rpc(context,projectId,{ action: 'list' },null,null,requestId);
     if (!Array.isArray(result.versions)) throw new CommercialRepositoryError(503,'branches_unavailable','Liste des versions indisponible.');

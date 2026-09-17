@@ -1,10 +1,15 @@
 export const API_ROUTES = new Set([
   '/v14/projects/:id/versions',
+  '/v16/scenarios/:id/document',
   '/v11/catalog',
   '/v10/projects/:id/metadata',
   '/v9/projects',
   '/v9/projects/:id/sharing',
   '/v9/project-invitations/:id/respond',
+  '/v15/contacts',
+  '/v15/contact-requests',
+  '/v15/contact-requests/:id/respond',
+  '/v15/contacts/:id/remove',
   '/v3/entitlements',
   '/v1/config',
   '/v1/me',
@@ -12,6 +17,9 @@ export const API_ROUTES = new Set([
   '/v1/devices',
   '/v1/devices/activate',
   '/v1/devices/deactivate',
+  '/v2/devices/challenges',
+  '/v2/devices/activate',
+  '/v2/licenses/renew',
   '/v1/usage',
   '/v1/auth/logout',
   '/v2/billing',
@@ -52,10 +60,13 @@ const UUID =
   '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 export function normalizeApiRoute(pathname: string): string {
   if (new RegExp(`^/v14/projects/${UUID}/versions$`, 'i').test(pathname)) return '/v14/projects/:id/versions';
+  if (new RegExp(`^/v16/scenarios/${UUID}/document$`, 'i').test(pathname)) return '/v16/scenarios/:id/document';
   if (new RegExp(`^/v10/projects/${UUID}/metadata$`, 'i').test(pathname)) return '/v10/projects/:id/metadata';
   if (API_ROUTES.has(pathname)) return pathname;
   if (new RegExp(`^/v9/projects/${UUID}/sharing$`, 'i').test(pathname)) return '/v9/projects/:id/sharing';
   if (new RegExp(`^/v9/project-invitations/${UUID}/respond$`, 'i').test(pathname)) return '/v9/project-invitations/:id/respond';
+  if (new RegExp(`^/v15/contact-requests/${UUID}/respond$`, 'i').test(pathname)) return '/v15/contact-requests/:id/respond';
+  if (new RegExp(`^/v15/contacts/${UUID}/remove$`, 'i').test(pathname)) return '/v15/contacts/:id/remove';
   if (new RegExp(`^/v5/scenarios/${UUID}/versions$`, 'i').test(pathname))
     return '/v5/scenarios/:id/versions';
   if (new RegExp(`^/v5/scenarios/${UUID}/restore$`, 'i').test(pathname))

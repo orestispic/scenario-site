@@ -7,6 +7,8 @@ import type {
   ActivateDeviceInput,
   AuthenticatedIdentity,
   CommercialRepository,
+  DeviceChallengeRecord,
+  DeviceProofRecord,
   EntitlementRecord,
   ProfileRecord,
   TokenVerifier,
@@ -76,6 +78,9 @@ function localState(
 }
 
 export class LocalTestRepository implements CommercialRepository {
+  private readonly deviceProofs = new Map<string, DeviceProofRecord>();
+  private readonly deviceChallenges = new Map<string, DeviceChallengeRecord & { consumed: boolean }>();
+  readonly deviceLicenses: Array<{ id: string; profileId: string; deviceId: string; snapshotId: string; keyId: string; formatVersion: number; issuedAt: string; entitlementValidUntil: string; offlineValidUntil: string }> = [];
   private readonly profiles = new Map<string, LocalProfileState>([
     [
       'local-discovery',
@@ -101,7 +106,7 @@ export class LocalTestRepository implements CommercialRepository {
       'local-studio',
       localState(
         'studio',
-        3,
+        2,
         [
           { code: 'local.edit', enabled: true, value: null },
           { code: 'ai.actions', enabled: true, value: null },
@@ -110,6 +115,8 @@ export class LocalTestRepository implements CommercialRepository {
           { code: 'cloud.sync', enabled: true, value: null },
           { code: 'cloud_sync', enabled: true, value: null },
           { code: 'scenario_versions', enabled: true, value: null },
+          { code: 'scene_cards', enabled: true, value: null },
+          { code: 'pro_formats', enabled: true, value: null },
           { code: 'studio_collaboration', enabled: true, value: null },
         ],
         { ai_short_action: 10, ai_pdf_import: 4 },
@@ -136,6 +143,15 @@ export class LocalTestRepository implements CommercialRepository {
 
   async getProfile(authUserId: string): Promise<ProfileRecord | null> {
     return this.profiles.get(authUserId)?.profile ?? null;
+  }
+
+  findProfileByEmail(email: string): ProfileRecord | null {
+    const normalized = email.trim().toLowerCase();
+    return [...this.profiles.values()].find((state) => state.profile.account.email.toLowerCase() === normalized)?.profile ?? null;
+  }
+
+  findProfileById(profileId: string): ProfileRecord | null {
+    return this.findByProfileId(profileId)?.profile ?? null;
   }
 
   async getEntitlements(profileId: string): Promise<EntitlementRecord | null> {
@@ -186,6 +202,48 @@ export class LocalTestRepository implements CommercialRepository {
     return structuredClone(state.devices.find(device => device.id === id && device.status === 'active') ?? null);
   }
 
+  async getDeviceForProof(profileId: string, deviceId: string): Promise<DeviceProofRecord | null> {
+    const proof = this.deviceProofs.get(deviceId);
+    if (!proof || proof.profileId !== profileId) return null;
+    const device = this.findByProfileId(profileId)?.devices.find(item => item.id === deviceId);
+    return device ? structuredClone({ ...proof, status: device.status }) : null;
+  }
+
+  async findActiveDeviceByKey(profileId: string, keyThumbprint: string): Promise<DeviceProofRecord | null> {
+    const proof = [...this.deviceProofs.values()].find(item => item.profileId === profileId && item.keyThumbprint === keyThumbprint && item.status === 'active');
+    return proof ? structuredClone(proof) : null;
+  }
+
+  async createDeviceChallenge(input: Omit<DeviceChallengeRecord, 'id'>): Promise<DeviceChallengeRecord> {
+    const challenge = { ...structuredClone(input), id: crypto.randomUUID(), consumed: false };
+    this.deviceChallenges.set(challenge.id, challenge);
+    return structuredClone(challenge);
+  }
+
+  async consumeDeviceChallenge(profileId: string, challengeId: string, purpose: DeviceChallengeRecord['purpose'], deviceId: string | null): Promise<DeviceChallengeRecord> {
+    const challenge = this.deviceChallenges.get(challengeId);
+    if (!challenge || challenge.profileId !== profileId || challenge.purpose !== purpose || challenge.deviceId !== deviceId)
+      throw new CommercialRepositoryError(400, 'device_challenge_invalid', 'Challenge appareil invalide.');
+    if (challenge.consumed)
+      throw new CommercialRepositoryError(409, 'device_challenge_consumed', 'Challenge appareil déjà utilisé.');
+    if (Date.parse(challenge.expiresAt) <= Date.now())
+      throw new CommercialRepositoryError(400, 'device_challenge_expired', 'Challenge appareil expiré.');
+    challenge.consumed = true;
+    return structuredClone(challenge);
+  }
+
+  async markDeviceSeen(profileId: string, deviceId: string, clientVersion?: string): Promise<void> {
+    const device = this.requireState(profileId).devices.find(item => item.id === deviceId && item.status === 'active');
+    if (!device) throw new CommercialRepositoryError(403, 'device_revoked', 'Appareil révoqué.');
+    device.lastSeenAt = new Date().toISOString();
+    if (clientVersion) device.clientVersion = clientVersion.slice(0, 40);
+  }
+
+  async recordDeviceLicense(input: { id: string; profileId: string; deviceId: string; snapshotId: string; keyId: string; formatVersion: number; issuedAt: string; entitlementValidUntil: string; offlineValidUntil: string }): Promise<void> {
+    if (this.deviceLicenses.some(item => item.id === input.id)) return;
+    this.deviceLicenses.push(structuredClone(input));
+  }
+
   hasActiveDevice(
     profileId: string,
     fingerprintHash: string,
@@ -213,11 +271,21 @@ export class LocalTestRepository implements CommercialRepository {
     overrideLimit?: number,
   ): Promise<DeviceView> {
     const state = this.requireState(profileId);
-    const limit =
-      overrideLimit ??
-      (await this.getEntitlements(profileId))?.deviceLimit ??
-      state.deviceLimit;
-    const existingId = state.deviceIdsByFingerprint.get(input.fingerprintHash);
+    // Deliberately avoid an await between the count and insert: the SQL
+    // repository uses an advisory transaction lock, and this keeps the local
+    // concurrency model equivalent for tests.
+    const purchased = state.purchasedGrant;
+    const entitledLimit = purchased && (!purchased.expiresAt || Date.parse(purchased.expiresAt) > Date.now())
+      ? purchased.deviceLimit : state.deviceLimit;
+    const limit = Math.min(overrideLimit ?? entitledLimit, 2);
+    const keyedProof = input.keyThumbprint
+      ? [...this.deviceProofs.values()].find(item => item.profileId === profileId && item.keyThumbprint === input.keyThumbprint)
+      : undefined;
+    const fingerprintId = state.deviceIdsByFingerprint.get(input.fingerprintHash);
+    const fingerprintProof = fingerprintId ? this.deviceProofs.get(fingerprintId) : undefined;
+    if (fingerprintProof && input.keyThumbprint && fingerprintProof.keyThumbprint !== input.keyThumbprint)
+      throw new CommercialRepositoryError(409, 'device_identity_conflict', 'Cette identité appareil appartient déjà à une autre clé.');
+    const existingId = keyedProof?.id ?? fingerprintId;
     const existing = state.devices.find((device) => device.id === existingId);
     const activeCount = state.devices.filter(
       (device) => device.status === 'active',
@@ -244,10 +312,22 @@ export class LocalTestRepository implements CommercialRepository {
       platform: input.platform,
       status: 'active',
       lastSeenAt: new Date().toISOString(),
+      firstActivatedAt: existing?.firstActivatedAt ?? new Date().toISOString(),
+      clientVersion: input.clientVersion ?? existing?.clientVersion ?? null,
+      hasCryptographicIdentity: Boolean(input.publicKey && input.keyThumbprint) || existing?.hasCryptographicIdentity,
     });
     if (!existing) {
       state.devices.push(device);
       state.deviceIdsByFingerprint.set(input.fingerprintHash, device.id);
+    }
+    if (input.publicKey && input.keyThumbprint) {
+      this.deviceProofs.set(device.id, {
+        id: device.id,
+        profileId,
+        status: 'active',
+        publicKey: structuredClone(input.publicKey),
+        keyThumbprint: input.keyThumbprint,
+      });
     }
     return structuredClone(device);
   }
@@ -263,6 +343,8 @@ export class LocalTestRepository implements CommercialRepository {
         'Appareil introuvable.',
       );
     device.status = 'revoked';
+    const proof = this.deviceProofs.get(deviceId);
+    if (proof) proof.status = 'revoked';
   }
 
   removeLocalFixtureDevice(profileId: string, deviceId: string): void {
@@ -322,6 +404,10 @@ export class LocalTestRepository implements CommercialRepository {
     const state = this.requireState(profileId);
     if (state.purchasedGrant?.snapshotId === snapshotId)
       state.purchasedGrant = null;
+  }
+
+  revokePurchasedEntitlements(profileId: string): void {
+    this.requireState(profileId).purchasedGrant = null;
   }
 
   async appendAudit(event: {

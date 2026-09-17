@@ -28,6 +28,11 @@ async function fixture() {
     }));
   }
   for (const p of profiles) assert.equal((await call('/v1/devices/activate', p, { fingerprint: `phase10-device-fingerprint-${p}`, platform: 'windows', label: p })).status, 201);
+  for (const p of ['author', 'discovery'] as const) {
+    assert.equal((await call('/v15/contact-requests', 'studio', { email: `${p}@example.invalid` })).status, 201);
+    const received = await (await call('/v15/contacts', p)).json() as { receivedRequests: Array<{ id: string }> };
+    assert.equal((await call(`/v15/contact-requests/${received.receivedRequests[0].id}/respond`, p, { decision: 'accept' })).status, 200);
+  }
   async function create(title: string) {
     const content = JSON.stringify({ formatVersion: 1, title, content: { type: 'doc', content: [] } });
     const bytes = new TextEncoder().encode(content);
@@ -73,6 +78,47 @@ it('private cloud projects need no team; two projects have independent member li
   assert.doesNotMatch(JSON.stringify(metrics), /SYNTHETIC_PRIVATE_CONTENT|example.invalid|tokenHash|device-fingerprint/);
 });
 
+it('requires an accepted contact before a project invitation', async () => {
+  const { call, create, share } = await fixture();
+  const projectId = await create('Contact guard');
+  const studioId = await share(projectId);
+  const contacts = await (await call('/v15/contacts')).json() as { contacts: Array<{ profileId: string }> };
+  const author = contacts.contacts.find((item) => item.profileId === ids.author)!;
+  assert.equal((await call(`/v15/contacts/${author.profileId}/remove`, 'studio', {})).status, 200);
+  const denied = await call(`/v6/studios/${studioId}/invitations`, 'studio', { email: 'author@example.invalid', role: 'viewer' });
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json() as { code: string }).code, 'contact_required');
+});
+it('contact removal revokes shared access and pending invitations in both directions', async () => {
+  const {call,create,share,invite}=await fixture();
+  const a=await create('Accepted access'), b=await create('Pending access');
+  const sa=await share(a),sb=await share(b);
+  const accepted=await invite(sa,'author','viewer'),pending=await invite(sb,'author','viewer');
+  assert.equal((await call(`/v9/project-invitations/${accepted}/respond`,'author',{decision:'accept'})).status,200);
+  assert.equal((await call(`/v15/contacts/${ids.studio}/remove`,'author',{})).status,200);
+  assert.equal((await call(`/v5/scenarios/${a}/versions`,'author')).status,404);
+  const projects=await(await call('/v9/projects','author')).json() as CloudProjectListResponse;
+  assert.equal(projects.projects.length,0);assert.equal(projects.receivedInvitations.length,0);
+  assert.equal((await call(`/v9/project-invitations/${pending}/respond`,'author',{decision:'accept'})).status,403);
+});
+it('a contact request can only be accepted by its recipient and cannot remove oneself',async()=>{
+  const {call}=await fixture();
+  assert.equal((await call(`/v15/contacts/${ids.studio}/remove`,'studio',{})).status,404);
+  const before=await(await call('/v15/contacts')).json() as {contacts:unknown[]};assert.equal(before.contacts.length,2);
+  assert.equal((await call('/v15/contact-requests','author',{email:'discovery@example.invalid'})).status,201);
+  const received=await(await call('/v15/contacts','discovery')).json() as {receivedRequests:{id:string}[]};
+  const path=`/v15/contact-requests/${received.receivedRequests[0].id}/respond`;
+  assert.equal((await call(path,'studio',{decision:'accept'})).status,403);
+  assert.equal((await call(path,'author',{decision:'accept'})).status,403);
+  assert.equal((await call(path,'discovery',{decision:'accept'})).status,200);
+});
+it('a free guest may decline an editor invitation without purchasing Studio',async()=>{
+  const {runtime,call,create,share,invite}=await fixture();
+  const id=await create('Decline'),studio=await share(id),invitation=await invite(studio,'discovery','editor');
+  runtime.repository.grantEntitlements(ids.discovery,{configurationVersion:'free',issuedAt:new Date().toISOString(),expiresAt:null,offlineValidUntil:new Date(Date.now()+86400000).toISOString(),deviceLimit:1,entitlements:[]});
+  assert.equal((await call(`/v9/project-invitations/${invitation}/respond`,'discovery',{decision:'decline'})).status,200);
+});
+
 it('viewer cannot elevate; removal revokes access only to that project', async () => {
   const { call, create, share, invite } = await fixture();
   const a = await create('A'), b = await create('B');
@@ -107,6 +153,31 @@ it('private listing needs cloud rights but not a collaboration entitlement', asy
   runtime.repository.grantEntitlements(ids.author, { configurationVersion: 'cloud-only', issuedAt: new Date().toISOString(), expiresAt: null, offlineValidUntil: new Date(Date.now()+86400000).toISOString(), deviceLimit: 3, entitlements: ['cloud_sync', 'scenario_versions'].map((code) => ({ code, enabled: true, value: null })) });
   const r = await call('/v9/projects', 'author'); assert.equal(r.status, 200);
   assert.deepEqual((await r.json() as CloudProjectListResponse).receivedInvitations, []);
+});
+
+it('a viewer can accept and read one invited project without Cloud or Studio rights', async () => {
+  const { runtime, call, create, share, invite } = await fixture();
+  const projectId = await create('Guest reader');
+  const studioId = await share(projectId);
+  const invitationId = await invite(studioId, 'discovery', 'viewer');
+  runtime.repository.grantEntitlements(ids.discovery, {
+    configurationVersion: 'guest-reader', issuedAt: new Date().toISOString(), expiresAt: null,
+    offlineValidUntil: new Date(Date.now()+86400000).toISOString(), deviceLimit: 1,
+    entitlements: [{ code: 'local.edit', enabled: true, value: null }],
+  });
+  const pending = await (await call('/v9/projects', 'discovery')).json() as CloudProjectListResponse;
+  assert.deepEqual(pending.projects, []);
+  assert.deepEqual(pending.receivedInvitations.map((item) => item.id), [invitationId]);
+  assert.equal((await call(`/v9/project-invitations/${invitationId}/respond`, 'discovery', { decision: 'accept' })).status, 200);
+  const accepted = await (await call('/v9/projects', 'discovery')).json() as CloudProjectListResponse;
+  assert.deepEqual(accepted.projects.map((item) => item.id), [projectId]);
+  assert.equal(accepted.projects[0].role, 'viewer');
+  assert.equal(accepted.projects[0].realtimeStudioId, null);
+  assert.equal((await call(`/v5/scenarios/${projectId}/versions`, 'discovery')).status, 200);
+  assert.equal((await call('/v5/scenarios/sync', 'discovery', {
+    scenarioId: projectId, title: 'Guest reader', parentVersionId: null, content: '{}', checksum: '0'.repeat(64), sizeBytes: 2,
+    contentType: 'application/vnd.scenario+json', format: 'scenario-v1', origin: 'save',
+  })).status, 403);
 });
 
 it('sharing freezes the last private version and revoked writers cannot replay a historical save', async () => {

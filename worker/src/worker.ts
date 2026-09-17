@@ -30,6 +30,7 @@ import { CLOUD_CONTENT_TYPE, ScenarioConflictError } from './cloudSync.ts';
 import type { StudioContext } from './studio.ts';
 import type { CollaborativeOperationRequest } from '../../lib/commercial/contracts-v8.ts';
 import { buildPublicPlans } from './publicCatalog.ts';
+import { deviceChallengeMessage, deviceKeyThumbprint, deviceRequestMessage, randomDeviceNonce, routeRequiresDeviceProof, sha256Base64Url, validDevicePublicKey, verifyDeviceProof } from './deviceProof.ts';
 
 class ApiError extends Error {
   constructor(
@@ -462,6 +463,36 @@ function readDeactivateDevice(body: Record<string, unknown>): string {
   return body.deviceId;
 }
 
+function readDeviceChallenge(body: Record<string, unknown>): { purpose: 'activation' | 'license_renewal'; deviceId: string | null } {
+  assertExactKeys(body, ['purpose', 'deviceId']);
+  if (body.purpose !== 'activation' && body.purpose !== 'license_renewal')
+    throw new ApiError(400, 'invalid_challenge_purpose', 'Usage du challenge invalide.');
+  const deviceId = body.deviceId === undefined || body.deviceId === null ? null : readUuid(body, 'deviceId');
+  if (body.purpose === 'activation' && deviceId !== null)
+    throw new ApiError(400, 'invalid_device_id', 'Une activation ne cible pas encore un appareil.');
+  if (body.purpose === 'license_renewal' && deviceId === null)
+    throw new ApiError(400, 'invalid_device_id', 'Appareil requis pour renouveler la licence.');
+  return { purpose: body.purpose, deviceId };
+}
+
+function readDeviceProof(body: Record<string, unknown>, activation: boolean) {
+  const allowed = activation
+    ? ['challengeId', 'signature', 'publicKey', 'fingerprint', 'label', 'platform', 'clientVersion']
+    : ['challengeId', 'signature', 'deviceId', 'clientVersion'];
+  assertExactKeys(body, allowed);
+  const challengeId = readUuid(body, 'challengeId');
+  const signature = readString(body, 'signature', 256);
+  const clientVersion = readString(body, 'clientVersion', 40);
+  if (!/^[A-Za-z0-9._+-]{1,40}$/.test(clientVersion))
+    throw new ApiError(400, 'invalid_client_version', 'Version client invalide.');
+  if (!activation) return { challengeId, signature, clientVersion, deviceId: readUuid(body, 'deviceId') };
+  const publicKey = body.publicKey;
+  if (typeof publicKey !== 'object' || publicKey === null || Array.isArray(publicKey) || !validDevicePublicKey(publicKey as JsonWebKey))
+    throw new ApiError(400, 'invalid_device_key', 'Clé publique appareil invalide.');
+  return { challengeId, signature, clientVersion, publicKey: publicKey as JsonWebKey,
+    ...readActivateDevice({ fingerprint: body.fingerprint, label: body.label, platform: body.platform }) };
+}
+
 function readString(
   body: Record<string, unknown>,
   key: string,
@@ -881,6 +912,10 @@ export function createCommercialWorker(
               environment: dependencies.environment,
               offlineGrantPublicKey: publicKey,
               offlineGrantKeyId: dependencies.offlineGrantSigner.keyId,
+              offlineGrantPublicKeys: {
+                ...dependencies.offlineGrantVerificationKeys,
+                [dependencies.offlineGrantSigner.keyId]: publicKey,
+              },
               request_id: requestId,
             },
             status,
@@ -961,6 +996,39 @@ export function createCommercialWorker(
           throw new ApiError(429, 'rate_limited', 'Trop de requêtes.');
         }
 
+        if (routeRequiresDeviceProof(url.pathname)) {
+          const keyThumbprint = request.headers.get('x-senario-device-key');
+          const timestamp = request.headers.get('x-senario-device-time');
+          const nonce = request.headers.get('x-senario-device-nonce');
+          const bodyDigest = request.headers.get('x-senario-device-body');
+          const signature = request.headers.get('x-senario-device-signature');
+          const hasProof = Boolean(keyThumbprint || timestamp || nonce || bodyDigest || signature);
+          if (dependencies.enforceDeviceRequestProof !== false && (dependencies.environment !== 'test' || hasProof)) {
+            const timestampMs = Number(timestamp);
+            if (!keyThumbprint || !/^[A-Za-z0-9_-]{43}$/.test(keyThumbprint) ||
+              !nonce || !UUID_REGEX.test(nonce) || !bodyDigest || !/^[A-Za-z0-9_-]{43}$/.test(bodyDigest) ||
+              !signature || !Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 120_000)
+              throw new ApiError(403, 'device_request_proof_invalid', 'Preuve de requête appareil invalide.');
+            const actualDigest = await sha256Base64Url(await request.clone().arrayBuffer());
+            if (actualDigest !== bodyDigest)
+              throw new ApiError(403, 'device_request_body_changed', 'Le contenu de la requête ne correspond pas à sa preuve.');
+            const device = await dependencies.repository.findActiveDeviceByKey(profile.id, keyThumbprint);
+            if (!device?.publicKey || !(await verifyDeviceProof(device.publicKey, deviceRequestMessage({
+              method: request.method, path: `${url.pathname}${url.search}`, timestamp: timestamp!, nonce: nonce!, bodyDigest,
+            }), signature)))
+              throw new ApiError(403, 'device_request_proof_invalid', 'Preuve de requête appareil invalide.');
+          }
+        }
+
+        if (normalizedRoute === '/v16/scenarios/:id/document') {
+          if(request.method !== 'GET') throw new ApiError(405,'method_not_allowed','Méthode refusée.');
+          if(!dependencies.branchRepository) throw new ApiError(503,'document_unavailable','Document indisponible.');
+          const headers=readCloudHeaders(request,false);
+          const context={profileId:profile.id,fingerprintHash:await hashFingerprint(headers.deviceFingerprint,dependencies.deviceFingerprintPepper),platform:headers.platform,clientVersion:headers.clientVersion};
+          const document=await dependencies.branchRepository.readDocument(context,uuid(url.pathname.split('/')[3]));
+          status=200;
+          return jsonResponse({document,request_id:requestId},status,requestId,origin,dependencies.allowedOrigins);
+        }
         if (normalizedRoute === '/v14/projects/:id/versions') {
           if (!dependencies.branchRepository) throw new ApiError(503,'branches_unavailable','Les versions cloud nécessitent une mise à jour du serveur.');
           if (!['GET','POST'].includes(request.method)) throw new ApiError(405,'method_not_allowed','Méthode refusée.');
@@ -988,6 +1056,39 @@ export function createCommercialWorker(
           status=200; studio=request.method==='POST'?'mutated':'listed';
           if(value.status==='conflict') cloud='conflict';
           return jsonResponse({contractVersion:'2026-09-v10',...value,request_id:requestId},status,requestId,origin,dependencies.allowedOrigins);
+        }
+        if (normalizedRoute.startsWith('/v15/')) {
+          if (!dependencies.contactRepository) throw new ApiError(503, 'contacts_unavailable', 'Contacts indisponibles.');
+          const mutation = request.method === 'POST';
+          if ((!mutation && normalizedRoute !== '/v15/contacts') || (mutation && normalizedRoute === '/v15/contacts'))
+            throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          const headers = readCloudHeaders(request, mutation);
+          const context: StudioContext = {
+            profileId: profile.id,
+            emailHash: '',
+            displayName: profile.account.displayName ?? 'Membre',
+            fingerprintHash: await hashFingerprint(headers.deviceFingerprint, dependencies.deviceFingerprintPepper),
+            platform: headers.platform,
+            clientVersion: headers.clientVersion,
+          };
+          let value: object;
+          status = 200;
+          if (!mutation && normalizedRoute === '/v15/contacts') value = await dependencies.contactRepository.list(context);
+          else if (normalizedRoute === '/v15/contact-requests') {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['email']);
+            value = await dependencies.contactRepository.request({ context, email: readInvitationEmail(body) });
+            status = 201;
+          } else if (normalizedRoute === '/v15/contact-requests/:id/respond') {
+            const body = await readObjectBody(request);
+            assertExactKeys(body, ['decision']);
+            if (!['accept', 'decline', 'cancel'].includes(String(body.decision))) throw new ApiError(400, 'invalid_contact_decision', 'Réponse invalide.');
+            value = await dependencies.contactRepository.respond({ context, requestId: uuid(url.pathname.split('/')[3], 'invalid_contact_request_id'), decision: body.decision as 'accept' | 'decline' | 'cancel' });
+          } else if (normalizedRoute === '/v15/contacts/:id/remove') {
+            assertExactKeys(await readObjectBody(request), []);
+            value = await dependencies.contactRepository.remove({ context, contactProfileId: uuid(url.pathname.split('/')[3], 'invalid_contact_id') });
+          } else throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          return jsonResponse({ contractVersion: '2026-09-v15', ...value, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
         }
         if (normalizedRoute.startsWith('/v9/')) {
           if (!dependencies.projectRepository || !dependencies.studioInvitationPepper)
@@ -1361,6 +1462,10 @@ export function createCommercialWorker(
             const email = readInvitationEmail(body);
             if (body.role !== 'editor' && body.role !== 'viewer')
               throw new ApiError(400, 'invalid_studio_role', 'Rôle refusé.');
+            const invitationStudio = await dependencies.studioRepository.detail(context, studioRoute.studioId!);
+            if (invitationStudio.studio.role !== 'owner') throw new ApiError(404, 'studio_not_found', 'Studio introuvable.');
+            if (!dependencies.contactRepository) throw new ApiError(503, 'contacts_unavailable', 'Contacts indisponibles.');
+            const recipientProfileId = await dependencies.contactRepository.requireAcceptedEmail(profile.id, email);
             const token = await strongInvitationToken(
               studioRoute.studioId!,
               headers.idempotencyKey,
@@ -1382,6 +1487,7 @@ export function createCommercialWorker(
               context,
               studioId: studioRoute.studioId!,
               recipientEmailHash,
+              recipientProfileId,
               recipientMasked: maskEmail(email),
               role: body.role,
               tokenHash,
@@ -2045,10 +2151,135 @@ export function createCommercialWorker(
           );
         }
 
+        if (request.method === 'POST' && url.pathname === '/v2/devices/challenges') {
+          const input = readDeviceChallenge(await readObjectBody(request));
+          if (input.deviceId) {
+            const device = await dependencies.repository.getDeviceForProof(profile.id, input.deviceId);
+            if (!device || device.status !== 'active')
+              throw new ApiError(403, 'device_revoked', 'Cet appareil n’est plus activé.');
+            if (!device.publicKey || !device.keyThumbprint)
+              throw new ApiError(409, 'device_key_upgrade_required', 'Réactivez cet appareil pour sécuriser sa licence.');
+          }
+          const challenge = await dependencies.repository.createDeviceChallenge({
+            profileId: profile.id,
+            deviceId: input.deviceId,
+            purpose: input.purpose,
+            nonce: randomDeviceNonce(),
+            expiresAt: new Date(Date.now() + 2 * 60_000).toISOString(),
+          });
+          status = 201;
+          return jsonResponse({
+            challenge: {
+              id: challenge.id,
+              purpose: challenge.purpose,
+              message: deviceChallengeMessage(challenge),
+              expiresAt: challenge.expiresAt,
+            },
+            request_id: requestId,
+          }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
+        if (request.method === 'POST' && url.pathname === '/v2/devices/activate') {
+          const proof = readDeviceProof(await readObjectBody(request), true) as {
+            challengeId: string; signature: string; clientVersion: string;
+            publicKey: JsonWebKey; fingerprint: string; label: string;
+            platform: 'windows' | 'macos';
+          };
+          const challenge = await dependencies.repository.consumeDeviceChallenge(
+            profile.id, proof.challengeId, 'activation', null,
+          );
+          if (!(await verifyDeviceProof(proof.publicKey, deviceChallengeMessage(challenge), proof.signature)))
+            throw new ApiError(403, 'device_proof_invalid', 'Preuve cryptographique appareil invalide.');
+          const device = await dependencies.repository.activateDevice(profile.id, {
+            fingerprintHash: await hashFingerprint(proof.fingerprint, dependencies.deviceFingerprintPepper),
+            publicKey: proof.publicKey,
+            keyThumbprint: await deviceKeyThumbprint(proof.publicKey),
+            clientVersion: proof.clientVersion,
+            label: proof.label,
+            platform: proof.platform,
+          });
+          await dependencies.repository.appendAudit({
+            profileId, action: 'device.activate.proved', entityType: 'device', entityId: device.id, requestId,
+          });
+          status = 201;
+          return jsonResponse({ device, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
+        if (request.method === 'POST' && url.pathname === '/v2/licenses/renew') {
+          const proof = readDeviceProof(await readObjectBody(request), false) as {
+            challengeId: string; signature: string; clientVersion: string; deviceId: string;
+          };
+          const device = await dependencies.repository.getDeviceForProof(profile.id, proof.deviceId);
+          if (!device || device.status !== 'active')
+            throw new ApiError(403, 'device_revoked', 'Cet appareil n’est plus activé.');
+          if (!device.publicKey || !device.keyThumbprint)
+            throw new ApiError(409, 'device_key_upgrade_required', 'Réactivez cet appareil pour sécuriser sa licence.');
+          const challenge = await dependencies.repository.consumeDeviceChallenge(
+            profile.id, proof.challengeId, 'license_renewal', proof.deviceId,
+          );
+          if (!(await verifyDeviceProof(device.publicKey, deviceChallengeMessage(challenge), proof.signature)))
+            throw new ApiError(403, 'device_proof_invalid', 'Preuve cryptographique appareil invalide.');
+          const [entitlements, billing] = await Promise.all([
+            dependencies.repository.getEntitlements(profile.id),
+            dependencies.billingRepository.getBillingState(profile.id),
+          ]);
+          if (!entitlements) throw new ApiError(403, 'entitlements_missing', 'Droits indisponibles.');
+          const now = new Date();
+          const snapshot = {
+            ...entitlements.snapshot,
+            issuedAt: now.toISOString(),
+            offlineValidUntil: offlineLeaseUntil(billing, entitlements.snapshot.offlineValidUntil, now.getTime()),
+          };
+          const licenseId = crypto.randomUUID();
+          const entitlementValidUntil = billing.currentPeriodEndsAt ?? snapshot.offlineValidUntil;
+          const payload: BoundOfflineGrantPayload & { deviceFingerprint: null; serverTime: string } = {
+            userId: profile.id,
+            deviceId: device.id,
+            deviceFingerprint: null,
+            deviceKeyThumbprint: device.keyThumbprint,
+            licenseId,
+            licenseFormatVersion: 2,
+            plan: billing.offerCode ?? 'free',
+            entitlementValidUntil,
+            entitlements: snapshot.entitlements,
+            snapshotId: snapshot.id,
+            configurationVersion: snapshot.configurationVersion,
+            issuedAt: snapshot.issuedAt,
+            expiresAt: snapshot.offlineValidUntil,
+            serverTime: now.toISOString(),
+            contractVersion: '2026-09-v4',
+            snapshotJson: JSON.stringify(snapshot),
+          };
+          await dependencies.repository.markDeviceSeen(profile.id, device.id, proof.clientVersion);
+          await dependencies.repository.recordDeviceLicense({
+            id: licenseId,
+            profileId: profile.id,
+            deviceId: device.id,
+            snapshotId: snapshot.id,
+            keyId: dependencies.offlineGrantSigner.keyId,
+            formatVersion: 2,
+            issuedAt: snapshot.issuedAt,
+            entitlementValidUntil,
+            offlineValidUntil: snapshot.offlineValidUntil,
+          });
+          await dependencies.repository.appendAudit({
+            profileId, action: 'license.renew', entityType: 'device', entityId: device.id, requestId,
+          });
+          status = 200;
+          return jsonResponse({
+            snapshot,
+            offlineGrant: await dependencies.offlineGrantSigner.sign(payload),
+            contractVersion: '2026-09-v4',
+            request_id: requestId,
+          }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
         if (
           request.method === 'GET' &&
           ['/v1/entitlements', '/v3/entitlements'].includes(url.pathname)
         ) {
+          if (url.searchParams.get('offline') === '1' && dependencies.environment !== 'test')
+            throw new ApiError(426, 'device_proof_required', 'Cette version de Senario doit être mise à jour pour renouveler une licence hors ligne.');
           const entitlements = await dependencies.repository.getEntitlements(
             profile.id,
           );
@@ -2063,13 +2294,6 @@ export function createCommercialWorker(
             ? await dependencies.repository.findActiveDevice?.(profile.id, await hashFingerprint(fingerprint, dependencies.deviceFingerprintPepper))
             : null;
           const leaseNow = new Date();
-          if (device && url.searchParams.get('offline') === '1') {
-            const billing = await dependencies.billingRepository.getBillingState(profile.id);
-            entitlements.snapshot = { ...entitlements.snapshot,
-              issuedAt: leaseNow.toISOString(),
-              offlineValidUntil: offlineLeaseUntil(billing, entitlements.snapshot.offlineValidUntil, leaseNow.getTime()),
-            };
-          }
           const payload: OfflineGrantPayload = {
             userId: profile.id,
             deviceId: device?.id ?? null,
@@ -2122,6 +2346,8 @@ export function createCommercialWorker(
           request.method === 'POST' &&
           url.pathname === '/v1/devices/activate'
         ) {
+          if (dependencies.environment !== 'test')
+            throw new ApiError(426, 'device_proof_required', 'Mettez Senario à jour pour activer cet appareil en sécurité.');
           const input = readActivateDevice(await readObjectBody(request));
           const device = await dependencies.repository.activateDevice(
             profile.id,
@@ -2466,6 +2692,22 @@ export function createCommercialWorker(
                 : error instanceof AuthenticationError
                   ? new ApiError(401, 'authentication_required', error.message)
                   : new ApiError(500, 'internal_error', 'Erreur interne.');
+        if (profileId && (
+          apiError.code.startsWith('device_') ||
+          apiError.code.startsWith('license_') ||
+          apiError.code === 'rate_limited'
+        )) {
+          try {
+            await dependencies.repository.appendAudit({
+              profileId,
+              action: `security.${apiError.code}`,
+              entityType: 'security_event',
+              requestId,
+            });
+          } catch {
+            console.warn(JSON.stringify({ event: 'audit.unavailable', request_id: requestId }));
+          }
+        }
         status = apiError.status;
         return jsonResponse(
           {

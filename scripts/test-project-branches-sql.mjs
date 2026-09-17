@@ -9,7 +9,8 @@ const db = new PGlite({ extensions: { pgcrypto, citext } });
 try {
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create schema extensions;
-    create table auth.users(id uuid primary key, email text, raw_user_meta_data jsonb default '{}');
+    create table auth.users(id uuid primary key, email text, raw_user_meta_data jsonb default '{}',deleted_at timestamptz,banned_until timestamptz);
+    create table auth.sessions(id uuid primary key,user_id uuid references auth.users(id),not_after timestamptz);
     create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
     create extension pgcrypto with schema extensions;
     create extension citext;`);
@@ -28,7 +29,10 @@ try {
         select id,repeat(substr(r,1,1),64),'windows' from public.profiles p where p.email=fixture_email::citext;
     end loop;
   end $$;`);
-  for (const name of ['project_metadata_transaction.sql', 'project_branches_transaction.sql']) {
+  await db.exec(`insert into public.project_contacts(requester_profile_id,recipient_profile_id,profile_low_id,profile_high_id,status,accepted_at)
+    select a.id,b.id,least(a.id,b.id),greatest(a.id,b.id),'accepted',now() from public.profiles a cross join public.profiles b
+    where a.email='phase9-owner-zblnsdyaoljnezxdidtx@example.com' and b.email in('phase9-editor-zblnsdyaoljnezxdidtx@example.com','phase9-viewer-zblnsdyaoljnezxdidtx@example.com');`);
+  for (const name of ['project_metadata_transaction.sql', 'project_branches_transaction.sql', 'release_security_transaction.sql', 'device_license_transaction.sql']) {
     const sql = await readFile(new URL(`../supabase/tests/${name}`, import.meta.url), 'utf8');
     await db.exec('begin');
     await db.exec(sql);

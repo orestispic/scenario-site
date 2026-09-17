@@ -19,10 +19,14 @@ export class LocalCloudProjectRepository implements CloudProjectRepository {
     const scenarios = await this.cloud.list(context);
     let collaborationAllowed = true;
     let invitations: StudioInvitationView[] = [];
-    try { invitations = await this.studios.receivedInvitations(context); }
+    try {
+      await this.studios.list(context);
+      invitations = await this.studios.receivedInvitations(context);
+    }
     catch (error) {
-      if (!(error instanceof CommercialRepositoryError) || error.code !== 'studio_entitlement_missing') throw error;
+      if (!(error instanceof CommercialRepositoryError) || !['cloud_entitlement_missing', 'studio_entitlement_missing'].includes(error.code)) throw error;
       collaborationAllowed = false;
+      invitations = await this.studios.receivedInvitations(context);
     }
     return {
       projects: await Promise.all(scenarios.map(async (scenario): Promise<CloudProject> => {
@@ -61,8 +65,8 @@ export class SupabaseCloudProjectRepository implements CloudProjectRepository {
     });
     if (!response.ok) {
       const text = await response.text();
-      const code = ['client_update_required', 'cloud_entitlement_missing', 'cloud_device_inactive', 'studio_device_inactive', 'studio_entitlement_missing', 'studio_not_found', 'project_not_found', 'invitation_expired', 'invitation_not_pending', 'studio_idempotency_conflict', 'last_owner_required'].find((v) => text.includes(v));
-      throw new CommercialRepositoryError(code === 'client_update_required' ? 426 : code?.endsWith('not_found') ? 404 : code?.endsWith('missing') || code?.endsWith('inactive') ? 403 : code ? 409 : 503, code ?? 'projects_unavailable', 'Projet cloud indisponible. Réessayez ou vérifiez votre accès.');
+      const code = ['contact_required', 'client_update_required', 'cloud_entitlement_missing', 'cloud_device_inactive', 'studio_device_inactive', 'studio_entitlement_missing', 'studio_not_found', 'project_not_found', 'invitation_expired', 'invitation_not_pending', 'studio_idempotency_conflict', 'last_owner_required'].find((v) => text.includes(v));
+      throw new CommercialRepositoryError(code === 'client_update_required' ? 426 : code?.endsWith('not_found') ? 404 : code === 'contact_required' || code?.endsWith('missing') || code?.endsWith('inactive') ? 403 : code ? 409 : 503, code ?? 'projects_unavailable', 'Projet cloud indisponible. Réessayez ou vérifiez votre accès.');
     }
     return response.json() as Promise<T>;
   }

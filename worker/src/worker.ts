@@ -2268,6 +2268,8 @@ export function createCommercialWorker(
           );
           if (!(await verifyDeviceProof(device.publicKey, deviceChallengeMessage(challenge), proof.signature)))
             throw new ApiError(403, 'device_proof_invalid', 'Preuve cryptographique appareil invalide.');
+          if (dependencies.environment !== 'test' || dependencies.enforceDeviceRequestProof === true)
+            await dependencies.repository.assertDeviceSession(profile.id, device.id);
           const [entitlements, billing] = await Promise.all([
             dependencies.repository.getEntitlements(profile.id),
             dependencies.billingRepository.getBillingState(profile.id),

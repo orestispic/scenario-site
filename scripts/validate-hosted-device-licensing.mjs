@@ -193,6 +193,9 @@ async function run() {
     const renewalChallenge = (await api(selected.token, '/v2/devices/challenges', {
       purpose: 'license_renewal', deviceId: renewalKey.activation.device.id,
     }, [201])).value.challenge;
+    const renewalSession = await signedApi(selected.token, renewalKey.key, '/v17/device-session/claim', {
+      deviceId: renewalKey.activation.device.id, force: true,
+    });
     const license = (await api(selected.token, '/v2/licenses/renew', {
       challengeId: renewalChallenge.id,
       signature: await signature(renewalKey.key.pair.privateKey, renewalChallenge.message),
@@ -214,6 +217,10 @@ async function run() {
       decodeBase64Url(license.offlineGrant.signature), encoder.encode(license.offlineGrant.payload),
     );
     if (!verified) throw new Error('Hosted offline license signature is invalid.');
+    await signedApi(selected.token, renewalKey.key, '/v17/device-session/release', {
+      deviceId: renewalKey.activation.device.id,
+      leaseId: renewalSession.value.session.leaseId,
+    }, [204]);
 
     await api(selected.token, '/v1/devices/deactivate', { deviceId: renewalKey.activation.device.id }, [204]);
     created.splice(created.indexOf(renewalKey.activation.device.id), 1);

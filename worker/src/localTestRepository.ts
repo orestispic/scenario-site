@@ -80,6 +80,7 @@ function localState(
 export class LocalTestRepository implements CommercialRepository {
   private readonly deviceProofs = new Map<string, DeviceProofRecord>();
   private readonly deviceChallenges = new Map<string, DeviceChallengeRecord & { consumed: boolean }>();
+  private readonly deviceSessions = new Map<string, { leaseId: string; deviceId: string; expiresAt: string }>();
   readonly deviceLicenses: Array<{ id: string; profileId: string; deviceId: string; snapshotId: string; keyId: string; formatVersion: number; issuedAt: string; entitlementValidUntil: string; offlineValidUntil: string }> = [];
   private readonly profiles = new Map<string, LocalProfileState>([
     [
@@ -345,6 +346,42 @@ export class LocalTestRepository implements CommercialRepository {
     device.status = 'revoked';
     const proof = this.deviceProofs.get(deviceId);
     if (proof) proof.status = 'revoked';
+    if (this.deviceSessions.get(profileId)?.deviceId === deviceId) this.deviceSessions.delete(profileId);
+  }
+
+  async claimDeviceSession(profileId: string, deviceId: string, force: boolean) {
+    const state = this.requireState(profileId);
+    const device = state.devices.find(item => item.id === deviceId && item.status === 'active');
+    if (!device) throw new CommercialRepositoryError(403, 'device_revoked', 'Appareil révoqué.');
+    const current = this.deviceSessions.get(profileId);
+    if (current && Date.parse(current.expiresAt) > Date.now() && current.deviceId !== deviceId && !force) {
+      const activeDevice = state.devices.find(item => item.id === current.deviceId)!;
+      return { status: 'conflict' as const, expiresAt: current.expiresAt, activeDevice: structuredClone(activeDevice) };
+    }
+    const lease = current?.deviceId === deviceId && Date.parse(current.expiresAt) > Date.now()
+      ? current : { leaseId: crypto.randomUUID(), deviceId, expiresAt: '' };
+    lease.expiresAt = new Date(Date.now() + 90_000).toISOString();
+    this.deviceSessions.set(profileId, lease);
+    return { status: 'claimed' as const, ...structuredClone(lease) };
+  }
+
+  async heartbeatDeviceSession(profileId: string, deviceId: string, leaseId: string) {
+    const current = this.deviceSessions.get(profileId);
+    if (!current || current.deviceId !== deviceId || current.leaseId !== leaseId || Date.parse(current.expiresAt) <= Date.now())
+      throw new CommercialRepositoryError(409, 'device_session_replaced', 'Session appareil remplacée.');
+    current.expiresAt = new Date(Date.now() + 90_000).toISOString();
+    return structuredClone(current);
+  }
+
+  async releaseDeviceSession(profileId: string, deviceId: string, leaseId: string): Promise<void> {
+    const current = this.deviceSessions.get(profileId);
+    if (current?.deviceId === deviceId && current.leaseId === leaseId) this.deviceSessions.delete(profileId);
+  }
+
+  async assertDeviceSession(profileId: string, deviceId: string): Promise<void> {
+    const current = this.deviceSessions.get(profileId);
+    if (!current || current.deviceId !== deviceId || Date.parse(current.expiresAt) <= Date.now())
+      throw new CommercialRepositoryError(409, 'device_session_required', 'Session appareil requise.');
   }
 
   removeLocalFixtureDevice(profileId: string, deviceId: string): void {

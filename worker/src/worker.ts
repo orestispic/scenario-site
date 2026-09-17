@@ -997,6 +997,7 @@ export function createCommercialWorker(
         }
 
         if (routeRequiresDeviceProof(url.pathname)) {
+          let provedDeviceId: string | null = null;
           const keyThumbprint = request.headers.get('x-senario-device-key');
           const timestamp = request.headers.get('x-senario-device-time');
           const nonce = request.headers.get('x-senario-device-nonce');
@@ -1017,7 +1018,55 @@ export function createCommercialWorker(
               method: request.method, path: `${url.pathname}${url.search}`, timestamp: timestamp!, nonce: nonce!, bodyDigest,
             }), signature)))
               throw new ApiError(403, 'device_request_proof_invalid', 'Preuve de requête appareil invalide.');
+            provedDeviceId = device.id;
           }
+          const isSessionControlRoute = normalizedRoute.startsWith('/v17/device-session/');
+          if (!isSessionControlRoute && provedDeviceId &&
+            (dependencies.environment !== 'test' || dependencies.enforceDeviceRequestProof === true)) {
+            await dependencies.repository.assertDeviceSession(profile.id, provedDeviceId);
+          }
+        }
+
+        if (normalizedRoute === '/v17/device-session/claim') {
+          if (request.method !== 'POST') throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          const body = await readObjectBody(request);
+          assertExactKeys(body, ['deviceId', 'force']);
+          const deviceId = readUuid(body, 'deviceId');
+          if (body.force !== undefined && typeof body.force !== 'boolean')
+            throw new ApiError(400, 'invalid_force', 'Option de reprise invalide.');
+          const claim = await dependencies.repository.claimDeviceSession(profile.id, deviceId, body.force === true);
+          if (claim.status === 'conflict')
+            throw new ApiError(409, 'device_session_in_use', 'Senario est déjà utilisé sur un autre appareil.', {
+              conflict: { activeDevice: claim.activeDevice, expiresAt: claim.expiresAt },
+            });
+          await dependencies.repository.appendAudit({
+            profileId, action: body.force === true ? 'device.session.taken_over' : 'device.session.claimed',
+            entityType: 'device', entityId: deviceId, requestId,
+          });
+          status = 200;
+          return jsonResponse({ session: claim, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
+        if (normalizedRoute === '/v17/device-session/heartbeat') {
+          if (request.method !== 'POST') throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          const body = await readObjectBody(request);
+          assertExactKeys(body, ['deviceId', 'leaseId']);
+          const lease = await dependencies.repository.heartbeatDeviceSession(
+            profile.id, readUuid(body, 'deviceId'), readUuid(body, 'leaseId'),
+          );
+          status = 200;
+          return jsonResponse({ session: lease, request_id: requestId }, status, requestId, origin, dependencies.allowedOrigins);
+        }
+
+        if (normalizedRoute === '/v17/device-session/release') {
+          if (request.method !== 'POST') throw new ApiError(405, 'method_not_allowed', 'Méthode refusée.');
+          const body = await readObjectBody(request);
+          assertExactKeys(body, ['deviceId', 'leaseId']);
+          await dependencies.repository.releaseDeviceSession(
+            profile.id, readUuid(body, 'deviceId'), readUuid(body, 'leaseId'),
+          );
+          status = 204;
+          return emptyResponse(status, requestId, origin, dependencies.allowedOrigins);
         }
 
         if (normalizedRoute === '/v16/scenarios/:id/document') {

@@ -125,6 +125,32 @@ test('copying a legacy fingerprint cannot replace an already bound device key', 
   assert.equal((await replacement.json() as { code: string }).code, 'device_identity_conflict');
 });
 
+test('only one of two registered devices holds the online usage lease', async () => {
+  const runtime = await createLocalRuntime();
+  const profileId = '10000000-0000-4000-8000-000000000003';
+  const makeDevice = (suffix: string) => runtime.repository.activateDevice(profileId, {
+    fingerprintHash: `${suffix}`.padEnd(64, '0'),
+    keyThumbprint: `${suffix}`.padEnd(43, 'A'),
+    publicKey: { kty: 'EC', crv: 'P-256', x: 'A'.repeat(43), y: 'B'.repeat(43) },
+    platform: 'windows', label: `Appareil ${suffix}`, clientVersion: '0.1.15',
+  });
+  const [first, second] = await Promise.all([makeDevice('first'), makeDevice('second')]);
+
+  const firstClaim = await runtime.repository.claimDeviceSession(profileId, first.id, false);
+  assert.equal(firstClaim.status, 'claimed');
+  const conflict = await runtime.repository.claimDeviceSession(profileId, second.id, false);
+  assert.equal(conflict.status, 'conflict');
+  if (conflict.status === 'conflict') assert.equal(conflict.activeDevice.id, first.id);
+  await assert.rejects(() => runtime.repository.assertDeviceSession(profileId, second.id));
+
+  const takeover = await runtime.repository.claimDeviceSession(profileId, second.id, true);
+  assert.equal(takeover.status, 'claimed');
+  await runtime.repository.assertDeviceSession(profileId, second.id);
+  await assert.rejects(() => runtime.repository.assertDeviceSession(profileId, first.id));
+  if (firstClaim.status === 'claimed')
+    await assert.rejects(() => runtime.repository.heartbeatDeviceSession(profileId, first.id, firstClaim.leaseId));
+});
+
 test('hosted cloud calls require a fresh request signature from the active device key', async () => {
   const runtime = await createLocalRuntime({ environment: 'staging' });
   const key = await keyPair();
@@ -132,10 +158,29 @@ test('hosted cloud calls require a fresh request signature from the active devic
   const post = (path: string, body: unknown) => runtime.worker.fetch(new Request(`http://localhost${path}`, { method: 'POST', headers: baseHeaders, body: JSON.stringify(body) }));
   const challenge = (await (await post('/v2/devices/challenges', { purpose: 'activation' })).json() as { challenge: { id: string; message: string } }).challenge;
   const fingerprint = 'hosted-request-proof-fixture';
-  assert.equal((await post('/v2/devices/activate', {
+  const activationResponse = await post('/v2/devices/activate', {
     challengeId: challenge.id, signature: await sign(key.pair.privateKey, challenge.message), publicKey: key.publicKey,
     fingerprint, label: 'Appareil signé', platform: 'windows', clientVersion: '0.1.12',
-  })).status, 201);
+  });
+  assert.equal(activationResponse.status, 201);
+  const activated = await activationResponse.json() as { device: { id: string } };
+
+  const claimPath = '/v17/device-session/claim';
+  const claimBody = JSON.stringify({ deviceId: activated.device.id, force: false });
+  const claimTime = String(Date.now());
+  const claimNonce = crypto.randomUUID();
+  const claimDigest = await sha256Base64Url(claimBody);
+  const claimSignature = await sign(key.pair.privateKey, deviceRequestMessage({
+    method: 'POST', path: claimPath, timestamp: claimTime, nonce: claimNonce, bodyDigest: claimDigest,
+  }));
+  const claimed = await runtime.worker.fetch(new Request(`http://localhost${claimPath}`, {
+    method: 'POST', body: claimBody, headers: {
+      ...baseHeaders, 'X-Senario-Device-Key': await deviceKeyThumbprint(key.publicKey),
+      'X-Senario-Device-Time': claimTime, 'X-Senario-Device-Nonce': claimNonce,
+      'X-Senario-Device-Body': claimDigest, 'X-Senario-Device-Signature': claimSignature,
+    },
+  }));
+  assert.equal(claimed.status, 200);
 
   const unproved = await runtime.worker.fetch(new Request('http://localhost/v5/scenarios', {
     headers: { Authorization: baseHeaders.Authorization, Origin: baseHeaders.Origin, 'X-Scenario-Device-Fingerprint': fingerprint, 'X-Scenario-Platform': 'windows', 'X-Scenario-Client-Version': '0.1.12' },

@@ -69,6 +69,35 @@ async function api(token, path, body, expected = [200]) {
   return { status: response.status, value };
 }
 
+async function signedApi(token, key, path, body, expected = [200]) {
+  const method = body === undefined ? 'GET' : 'POST';
+  const serialized = body === undefined ? '' : JSON.stringify(body);
+  const timestamp = String(Date.now());
+  const nonce = randomUUID();
+  const bodyDigest = base64Url(new Uint8Array(await webcrypto.subtle.digest('SHA-256', encoder.encode(serialized))));
+  const proof = await signature(key.pair.privateKey, [
+    'senario-request-proof-v1', method, path, timestamp, nonce, bodyDigest,
+  ].join('\n'));
+  const response = await fetch(`${apiUrl}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/json', Authorization: `Bearer ${token}`, Origin: origin,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      'X-Senario-Device-Key': await keyThumbprint(key.publicKey),
+      'X-Senario-Device-Time': timestamp,
+      'X-Senario-Device-Nonce': nonce,
+      'X-Senario-Device-Body': bodyDigest,
+      'X-Senario-Device-Signature': proof,
+    },
+    ...(body === undefined ? {} : { body: serialized }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const value = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (!expected.includes(response.status))
+    throw new Error(`${path} returned ${response.status}:${String(value?.code ?? 'unknown')}.`);
+  return { status: response.status, value };
+}
+
 async function activate(token, key, label) {
   const challenge = (await api(token, '/v2/devices/challenges', { purpose: 'activation' }, [201])).value.challenge;
   const body = {
@@ -103,10 +132,12 @@ async function run() {
   try {
     const available = 2 - selected.activeCount;
     let renewalKey;
+    const createdDevices = [];
     for (let index = 0; index < available; index += 1) {
       const key = await createKey();
       const activation = await activate(selected.token, key, `Hosted licence E2E ${randomUUID().slice(0, 8)}`);
       created.push(activation.device.id);
+      createdDevices.push({ key, activation });
       renewalKey ??= { key, activation };
       if (index === 0) {
         const replay = await api(selected.token, '/v2/devices/activate', activation.body, [409]);
@@ -124,6 +155,40 @@ async function run() {
       label: 'Hosted licence overflow E2E', platform: 'windows', clientVersion: '0.1.13',
     }, [409]);
     if (overflow.value.code !== 'device_limit_reached') throw new Error('Third active device was not rejected by the hard limit.');
+
+    if (createdDevices.length >= 1) {
+      const first = createdDevices[0];
+      const firstClaim = await signedApi(selected.token, first.key, '/v17/device-session/claim', {
+        deviceId: first.activation.device.id, force: true,
+      });
+      if (createdDevices.length >= 2) {
+        const second = createdDevices[1];
+        const secondConflict = await signedApi(selected.token, second.key, '/v17/device-session/claim', {
+          deviceId: second.activation.device.id, force: false,
+        }, [409]);
+        if (secondConflict.value.code !== 'device_session_in_use' ||
+          secondConflict.value.conflict?.activeDevice?.id !== first.activation.device.id)
+          throw new Error('The second device did not receive the active-device conflict.');
+        const takeover = await signedApi(selected.token, second.key, '/v17/device-session/claim', {
+          deviceId: second.activation.device.id, force: true,
+        });
+        const staleHeartbeat = await signedApi(selected.token, first.key, '/v17/device-session/heartbeat', {
+          deviceId: first.activation.device.id, leaseId: firstClaim.value.session.leaseId,
+        }, [409]);
+        if (!['device_session_replaced', 'device_session_required'].includes(staleHeartbeat.value.code))
+          throw new Error('The displaced device retained its online usage lease.');
+        await signedApi(selected.token, second.key, '/v17/device-session/release', {
+          deviceId: second.activation.device.id, leaseId: takeover.value.session.leaseId,
+        }, [204]);
+      } else {
+        await signedApi(selected.token, first.key, '/v17/device-session/heartbeat', {
+          deviceId: first.activation.device.id, leaseId: firstClaim.value.session.leaseId,
+        });
+        await signedApi(selected.token, first.key, '/v17/device-session/release', {
+          deviceId: first.activation.device.id, leaseId: firstClaim.value.session.leaseId,
+        }, [204]);
+      }
+    }
 
     const renewalChallenge = (await api(selected.token, '/v2/devices/challenges', {
       purpose: 'license_renewal', deviceId: renewalKey.activation.device.id,

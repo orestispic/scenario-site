@@ -8,6 +8,8 @@ import type {
   CommercialRepository,
   DeviceChallengeRecord,
   DeviceProofRecord,
+  DeviceSessionClaim,
+  DeviceSessionLease,
   EntitlementRecord,
   ProfileRecord,
   WorkerEnvironment,
@@ -181,6 +183,63 @@ export class SupabaseRestRepository implements CommercialRepository {
     });
   }
 
+  async claimDeviceSession(profileId: string, deviceId: string, force: boolean): Promise<DeviceSessionClaim> {
+    const value = await this.write<Record<string, unknown>>('/rest/v1/rpc/claim_device_session_v17', {
+      p_profile_id: profileId,
+      p_device_id: deviceId,
+      p_force: force,
+      p_ttl_seconds: 90,
+    });
+    if (value.status === 'conflict') {
+      const device = value.activeDevice as Record<string, unknown> | undefined;
+      if (!device || typeof value.expiresAt !== 'string') throw new RepositoryError('Invalid device session conflict');
+      return {
+        status: 'conflict',
+        expiresAt: value.expiresAt,
+        activeDevice: {
+          id: String(device.id),
+          label: typeof device.label === 'string' ? device.label : null,
+          platform: device.platform === 'macos' ? 'macos' : 'windows',
+          status: 'active',
+          lastSeenAt: String(device.lastSeenAt),
+          firstActivatedAt: typeof device.firstActivatedAt === 'string' ? device.firstActivatedAt : undefined,
+          clientVersion: typeof device.clientVersion === 'string' ? device.clientVersion : null,
+          hasCryptographicIdentity: true,
+        },
+      };
+    }
+    return { status: 'claimed', ...this.readDeviceSessionLease(value) };
+  }
+
+  async heartbeatDeviceSession(profileId: string, deviceId: string, leaseId: string): Promise<DeviceSessionLease> {
+    const value = await this.write<Record<string, unknown>>('/rest/v1/rpc/heartbeat_device_session_v17', {
+      p_profile_id: profileId,
+      p_device_id: deviceId,
+      p_lease_id: leaseId,
+      p_ttl_seconds: 90,
+    });
+    if (value.status !== 'active')
+      throw new CommercialRepositoryError(409, 'device_session_replaced', 'Cet appareil n’est plus la session active.');
+    return this.readDeviceSessionLease(value);
+  }
+
+  async releaseDeviceSession(profileId: string, deviceId: string, leaseId: string): Promise<void> {
+    await this.write('/rest/v1/rpc/release_device_session_v17', {
+      p_profile_id: profileId,
+      p_device_id: deviceId,
+      p_lease_id: leaseId,
+    });
+  }
+
+  async assertDeviceSession(profileId: string, deviceId: string): Promise<void> {
+    const active = await this.write<boolean>('/rest/v1/rpc/is_device_session_active_v17', {
+      p_profile_id: profileId,
+      p_device_id: deviceId,
+    });
+    if (!active)
+      throw new CommercialRepositoryError(409, 'device_session_required', 'Cet appareil n’est pas la session active.');
+  }
+
   async getDeviceForProof(profileId: string, deviceId: string): Promise<DeviceProofRecord | null> {
     const rows = await this.read<DatabaseDevice[]>(
       `/rest/v1/devices?id=eq.${encodeURIComponent(deviceId)}&user_id=eq.${encodeURIComponent(profileId)}&select=id,status,public_key_jwk,key_thumbprint,label,platform,last_seen_at,first_activated_at,client_version&limit=1`,
@@ -313,6 +372,12 @@ export class SupabaseRestRepository implements CommercialRepository {
     nonce: row.nonce,
     expiresAt: row.expires_at,
   });
+
+  private readonly readDeviceSessionLease = (value: Record<string, unknown>): DeviceSessionLease => {
+    if (typeof value.leaseId !== 'string' || typeof value.deviceId !== 'string' || typeof value.expiresAt !== 'string')
+      throw new RepositoryError('Invalid device session lease');
+    return { leaseId: value.leaseId, deviceId: value.deviceId, expiresAt: value.expiresAt };
+  };
 
   private async read<T>(path: string): Promise<T> {
     const endpoint = path.split('?')[0] ?? 'unknown';

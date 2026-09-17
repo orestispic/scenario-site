@@ -118,6 +118,16 @@ export interface DeviceChallengeRecord {
   expiresAt: string;
 }
 
+export interface DeviceSessionLease {
+  leaseId: string;
+  deviceId: string;
+  expiresAt: string;
+}
+
+export type DeviceSessionClaim =
+  | ({ status: 'claimed' } & DeviceSessionLease)
+  | { status: 'conflict'; expiresAt: string; activeDevice: DeviceView };
+
 export interface CommercialRepository {
   getConfiguration(): Promise<
     Omit<
@@ -144,6 +154,10 @@ export interface CommercialRepository {
     input: ActivateDeviceInput,
   ): Promise<DeviceView>;
   deactivateDevice(profileId: string, deviceId: string): Promise<void>;
+  claimDeviceSession(profileId: string, deviceId: string, force: boolean): Promise<DeviceSessionClaim>;
+  heartbeatDeviceSession(profileId: string, deviceId: string, leaseId: string): Promise<DeviceSessionLease>;
+  releaseDeviceSession(profileId: string, deviceId: string, leaseId: string): Promise<void>;
+  assertDeviceSession(profileId: string, deviceId: string): Promise<void>;
   getUsage(profileId: string): Promise<UsageView[]>;
   logout(accessToken: string): Promise<void>;
   appendAudit(event: {

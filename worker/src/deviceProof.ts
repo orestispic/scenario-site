@@ -65,5 +65,5 @@ export async function sha256Base64Url(value: ArrayBuffer | Uint8Array | string):
 }
 
 export function routeRequiresDeviceProof(pathname: string): boolean {
-  return /^\/v(?:4|5|6|7|9|10|14|15|16)\//.test(pathname);
+  return /^\/v(?:4|5|6|7|9|10|14|15|16|17)\//.test(pathname);
 }

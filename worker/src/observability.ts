@@ -1,4 +1,7 @@
 export const API_ROUTES = new Set([
+  '/v17/device-session/claim',
+  '/v17/device-session/heartbeat',
+  '/v17/device-session/release',
   '/v14/projects/:id/versions',
   '/v16/scenarios/:id/document',
   '/v11/catalog',

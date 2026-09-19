@@ -30,6 +30,7 @@ import {
   BrowserAccount,
   takeEmailLink,
   validateBrowserConfig,
+  type EmailLink,
   type BrowserAccountConfig,
 } from '../lib/commercial/browser-account';
 import { InformationPages } from './information';
@@ -37,7 +38,7 @@ import type { PublicPlanView } from '../lib/commercial/contracts-v11';
 import './site.css';
 
 declare const __SENARIO_PUBLIC_CONFIG__: BrowserAccountConfig;
-let initialEmailLink = takeEmailLink(new URL(location.href), (url) =>
+let initialEmailAction = takeEmailLink(new URL(location.href), (url) =>
   history.replaceState(null, '', url),
 );
 const account = validateBrowserConfig(__SENARIO_PUBLIC_CONFIG__)
@@ -211,14 +212,17 @@ function EditorPreview() {
 }
 
 function App() {
-  const [emailLink, setEmailLink] = useState(() => {
-    const link = initialEmailLink;
-    initialEmailLink = null;
-    return link;
+  const [initialAction] = useState(() => {
+    const action = initialEmailAction;
+    initialEmailAction = null;
+    return action;
   });
+  const [emailLink, setEmailLink] = useState<EmailLink | null>(() =>
+    initialAction?.type === 'error' ? null : initialAction,
+  );
   const [route, setRoute] = useState(() =>
-    emailLink
-      ? emailLink.type === 'recovery'
+    initialAction
+      ? (initialAction.type === 'error' ? initialAction.target : initialAction.type) === 'recovery'
         ? '/reinitialisation'
         : '/connexion'
       : currentRoute(),
@@ -230,7 +234,9 @@ function App() {
   const [mode, setMode] = useState<'login' | 'signup'>(() =>
     new URL(location.href).searchParams.has('inscription') ? 'signup' : 'login',
   );
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(
+    initialAction?.type === 'error' ? initialAction.message : '',
+  );
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [email, setEmail] = useState('');
@@ -301,19 +307,26 @@ function App() {
       setEmailLink(null);
     };
     const navigation = () => {
-      const link = takeEmailLink(new URL(location.href), (url) =>
+      const action = takeEmailLink(new URL(location.href), (url) =>
         history.replaceState(null, '', url),
       );
       let next = currentRoute();
-      if (link) {
+      if (action) {
         account?.clear();
         setView(null);
-        setEmailLink(link);
-        next = link.type === 'recovery' ? '/reinitialisation' : '/connexion';
+        if (action.type === 'error') {
+          setEmailLink(null);
+          setMessage(action.message);
+          next = action.target === 'recovery' ? '/reinitialisation' : '/connexion';
+        } else {
+          setEmailLink(action);
+          setMessage('');
+          next = action.type === 'recovery' ? '/reinitialisation' : '/connexion';
+        }
       } else setEmailLink(null);
       history.replaceState(null, '', next);
       setRoute(next);
-      setMessage('');
+      if (!action) setMessage('');
       setMenuOpen(false);
     };
     addEventListener('popstate', navigation);

@@ -21,6 +21,32 @@ test('standard Supabase email session is kept only in memory for the intended ro
   });
   assert.equal(replaced, '/reinitialisation');
 });
+test('expired email links are stripped and become an explicit safe error state', () => {
+  let replaced = '';
+  const action = takeEmailLink(
+    new URL('https://site.invalid/reinitialisation?error=access_denied&error_code=otp_expired&error_description=secret-provider-detail'),
+    (url) => { replaced = url; },
+  );
+  assert.deepEqual(action, {
+    type: 'error',
+    target: 'recovery',
+    message: 'Ce lien de réinitialisation est invalide ou a expiré. Demandez un nouveau lien et utilisez uniquement le plus récent.',
+  });
+  assert.equal(replaced, '/reinitialisation');
+});
+test('signup and recovery destinations are sent as encoded Auth query parameters', async () => {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const client = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async (url, init) => {
+    calls.push({ url: requestUrl(url), body: JSON.parse(init!.body as string) });
+    return Response.json({});
+  }) as typeof fetch);
+  await client.signUp('fixture@example.invalid', 'synthetic', 'Fixture', 'https://site.invalid/connexion');
+  await client.recover('fixture@example.invalid', 'https://site.invalid/reinitialisation');
+  assert.equal(calls[0].url, 'https://auth.invalid/auth/v1/signup?redirect_to=https%3A%2F%2Fsite.invalid%2Fconnexion');
+  assert.deepEqual(calls[0].body, { email: 'fixture@example.invalid', password: 'synthetic', data: { display_name: 'Fixture' } });
+  assert.equal(calls[1].url, 'https://auth.invalid/auth/v1/recover?redirect_to=https%3A%2F%2Fsite.invalid%2Freinitialisation');
+  assert.deepEqual(calls[1].body, { email: 'fixture@example.invalid' });
+});
 test('confirmation verifies signup once and closes its temporary session', async () => {
   const calls: string[] = [];
   const client = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async (url, init) => {

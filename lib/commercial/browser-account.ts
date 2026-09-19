@@ -40,6 +40,14 @@ export type EmailLink =
   | { type: EmailLinkType; tokenHash: string }
   | { type: EmailLinkType; session: EmailSession };
 
+export type EmailLinkError = {
+  type: 'error';
+  target: EmailLinkType;
+  message: string;
+};
+
+export type EmailAction = EmailLink | EmailLinkError;
+
 function emailLinkType(value: string | null): EmailLinkType | null {
   return value === 'recovery' || value === 'signup' ? value : null;
 }
@@ -48,19 +56,32 @@ function safeEmailToken(value: string | null): string | null {
   return value && /^[A-Za-z0-9._~-]{16,16384}$/.test(value) ? value : null;
 }
 
-export function takeEmailLink(url: URL, replace: (url: string) => void): EmailLink | null {
+export function takeEmailLink(url: URL, replace: (url: string) => void): EmailAction | null {
   const fragment = new URLSearchParams(url.hash.slice(1));
   const hash = fragment.get('token_hash') ?? url.searchParams.get('token_hash');
   const type = emailLinkType(fragment.get('type') ?? url.searchParams.get('type'));
+  const target = type ?? (url.pathname.replace(/\/$/, '') === '/reinitialisation' ? 'recovery' : 'signup');
   const accessToken = safeEmailToken(fragment.get('access_token'));
   const refreshToken = safeEmailToken(fragment.get('refresh_token'));
   const expiresAt = Number(fragment.get('expires_at'));
   const expiresIn = Number(fragment.get('expires_in'));
-  const sensitive = ['token_hash', 'access_token', 'refresh_token', 'code', 'error', 'error_description', 'type'];
+  const hasError = ['error', 'error_code', 'error_description'].some(
+    (key) => url.searchParams.has(key) || fragment.has(key),
+  );
+  const sensitive = ['token_hash', 'access_token', 'refresh_token', 'code', 'error', 'error_code', 'error_description', 'type'];
   if (sensitive.some((key) => url.searchParams.has(key) || fragment.has(key))) {
     // No token, code or redirect parameter survives an email action link.
     // Its type determines the only safe local destination.
-    replace(type === 'recovery' ? '/reinitialisation' : '/connexion');
+    replace(target === 'recovery' ? '/reinitialisation' : '/connexion');
+  }
+  if (hasError) {
+    return {
+      type: 'error',
+      target,
+      message: target === 'recovery'
+        ? 'Ce lien de réinitialisation est invalide ou a expiré. Demandez un nouveau lien et utilisez uniquement le plus récent.'
+        : 'Ce lien de confirmation est invalide ou a expiré. Recommencez l’inscription pour recevoir un nouveau lien.',
+    };
   }
   if (!type) return null;
   if (hash && /^[a-f0-9]{32,128}$/i.test(hash)) return { type, tokenHash: hash };
@@ -117,7 +138,8 @@ export class BrowserAccount {
       if (epoch !== this.generation) throw new Error('Session fermée.');
       if (!response.ok) {
         if (response.status === 401) throw new Error('Session expirée. Reconnectez-vous.');
-        if (response.status === 429) throw new Error('Trop de demandes. Réessayez dans une minute.');
+        if (response.status === 429)
+          throw new Error('Un envoi a déjà été demandé récemment. Utilisez le dernier e-mail reçu ou réessayez dans quelques minutes.');
         throw new Error('Demande refusée. Vérifiez vos informations ou réessayez plus tard.');
       }
       const result = response.status === 204 ? undefined : await response.json();
@@ -150,18 +172,20 @@ export class BrowserAccount {
     displayName: string,
     emailRedirectTo?: string,
   ) {
-    await this.auth('signup', {
+    const path = emailRedirectTo
+      ? `signup?redirect_to=${encodeURIComponent(emailRedirectTo)}`
+      : 'signup';
+    await this.auth(path, {
       email,
       password,
       data: { display_name: displayName },
-      ...(emailRedirectTo ? { email_redirect_to: emailRedirectTo } : {}),
     });
   }
   async recover(email: string, emailRedirectTo?: string) {
-    await this.auth('recover', {
-      email,
-      ...(emailRedirectTo ? { email_redirect_to: emailRedirectTo } : {}),
-    });
+    const path = emailRedirectTo
+      ? `recover?redirect_to=${encodeURIComponent(emailRedirectTo)}`
+      : 'recover';
+    await this.auth(path, { email });
   }
   private acceptEmailLink(link: EmailLink, expected: EmailLinkType): Promise<string> {
     if (link.type !== expected) return Promise.reject(new Error('Lien de confirmation invalide.'));

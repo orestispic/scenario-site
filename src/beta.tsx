@@ -235,8 +235,8 @@ function App() {
   const pending = useRef(false);
   const [email, setEmail] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  const recoveryHash =
-    emailLink?.type === 'recovery' ? emailLink.tokenHash : null;
+  const recoveryLink = emailLink?.type === 'recovery' ? emailLink : null;
+  const hasEmailSession = emailLink !== null && 'session' in emailLink;
   function navigate(path: string, preserveMessage = false) {
     if (location.pathname !== path || location.hash)
       history.pushState(null, '', path);
@@ -272,6 +272,15 @@ function App() {
   useEffect(() => {
     history.replaceState(null, '', initialRoute.current);
   }, []);
+  useEffect(() => {
+    // Supabase has already validated a standard confirmation link before
+    // returning the temporary session in the URL fragment. Keep no token in
+    // the address bar or page state after showing the confirmation result.
+    if (emailLink?.type !== 'signup' || !hasEmailSession) return;
+    setEmailLink(null);
+    setMode('login');
+    setMessage('Adresse confirmée. Vous pouvez maintenant vous connecter.');
+  }, [emailLink, hasEmailSession]);
   useEffect(() => {
     let active = true;
     if (account)
@@ -365,7 +374,7 @@ function App() {
     const password = typeof passwordValue === 'string' ? passwordValue : '';
     if (
       route === '/reinitialisation' &&
-      recoveryHash &&
+      recoveryLink &&
       password !== data.get('confirmation')
     ) {
       setMessage('Les deux mots de passe ne sont pas identiques.');
@@ -379,10 +388,10 @@ function App() {
       if (!account)
         throw new Error('La connexion est momentanément indisponible.');
       if (route === '/reinitialisation') {
-        if (recoveryHash) {
+        if (recoveryLink) {
           setView(null);
           try {
-            await account.resetPassword(recoveryHash, password);
+            await account.resetPassword(recoveryLink, password);
           } finally {
             setEmailLink(null);
           }
@@ -392,7 +401,7 @@ function App() {
             'Mot de passe modifié. Connectez-vous avec le nouveau mot de passe.',
           );
         } else {
-          await account.recover(email);
+          await account.recover(email, `${location.origin}/reinitialisation`);
           setMessage(
             'Si cette adresse possède un compte, un lien de récupération sera envoyé. Consultez aussi vos courriers indésirables.',
           );
@@ -403,6 +412,7 @@ function App() {
           email,
           password,
           typeof name === 'string' ? name : '',
+          `${location.origin}/connexion`,
         );
         setMode('login');
         setMessage(
@@ -560,9 +570,10 @@ function App() {
               disabled={busy || !account}
               onClick={() =>
                 void perform(async () => {
-                  const hash = emailLink.tokenHash;
+                  const link = emailLink;
+                  if (!link) throw new Error('Lien de confirmation invalide.');
                   setEmailLink(null);
-                  await account!.confirmEmail(hash);
+                  await account!.confirmEmail(link);
                   setMode('login');
                   setMessage('Adresse confirmée. Vous pouvez vous connecter.');
                 })
@@ -582,14 +593,14 @@ function App() {
             <fieldset disabled={busy || !account}>
               <legend>
                 {reset
-                  ? recoveryHash
+                  ? recoveryLink
                     ? 'Choisir un nouveau mot de passe'
                     : 'Recevoir un lien par e-mail'
                   : mode === 'signup'
                     ? 'Créer un compte'
                     : 'Se connecter'}
               </legend>
-              {(!reset || !recoveryHash) && (
+              {(!reset || !recoveryLink) && (
                 <label>
                   Adresse e-mail
                   <input
@@ -615,7 +626,7 @@ function App() {
                   />
                 </label>
               )}
-              {(!reset || recoveryHash) && (
+              {(!reset || recoveryLink) && (
                 <label>
                   {reset ? 'Nouveau mot de passe' : 'Mot de passe'}
                   <input
@@ -631,7 +642,7 @@ function App() {
                   />
                 </label>
               )}
-              {reset && recoveryHash && (
+              {reset && recoveryLink && (
                 <label>
                   Confirmer le mot de passe
                   <input
@@ -652,7 +663,7 @@ function App() {
                 {busy
                   ? 'Veuillez patienter…'
                   : reset
-                    ? recoveryHash
+                    ? recoveryLink
                       ? 'Modifier mon mot de passe'
                       : 'Envoyer le lien'
                     : mode === 'signup'
@@ -1006,12 +1017,12 @@ function App() {
                   : 'ACCÈS AU COMPTE',
                 route === '/connexion'
                   ? 'Connectez-vous à senario.'
-                  : recoveryHash
+                  : recoveryLink
                     ? 'Un nouveau mot de passe.'
                     : 'Mot de passe oublié ?',
                 route === '/connexion'
                   ? 'La connexion sert à activer les fonctions Auteur ou Studio. L’écriture locale reste accessible sans compte dans l’application.'
-                  : recoveryHash
+                  : recoveryLink
                     ? 'Choisissez votre mot de passe, puis confirmez-le.'
                     : 'Indiquez l’adresse de votre compte. Nous vous enverrons un lien pour choisir un nouveau mot de passe.',
               )}

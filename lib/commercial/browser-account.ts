@@ -17,21 +17,65 @@ export function validateBrowserConfig(config: BrowserAccountConfig): boolean {
 /** Take once, strip BEFORE any request/render. Confirmation remains explicit. */
 export function takeRecoveryHash(url: URL, replace: (url: string) => void): string | null {
   const link = takeEmailLink(url, replace);
-  return link?.type === 'recovery' ? link.tokenHash : null;
+  return link?.type === 'recovery' && 'tokenHash' in link
+    ? link.tokenHash
+    : null;
 }
 
-export type EmailLink = { type: 'recovery' | 'signup'; tokenHash: string };
+type EmailLinkType = 'recovery' | 'signup';
+type EmailSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt?: number;
+  expiresIn?: number;
+};
+
+/**
+ * Supabase can return either a token hash (custom email templates) or a
+ * short-lived session in the fragment after it has already verified the
+ * address. Both representations are consumed immediately and never remain in
+ * the address bar.
+ */
+export type EmailLink =
+  | { type: EmailLinkType; tokenHash: string }
+  | { type: EmailLinkType; session: EmailSession };
+
+function emailLinkType(value: string | null): EmailLinkType | null {
+  return value === 'recovery' || value === 'signup' ? value : null;
+}
+
+function safeEmailToken(value: string | null): string | null {
+  return value && /^[A-Za-z0-9._~-]{16,16384}$/.test(value) ? value : null;
+}
+
 export function takeEmailLink(url: URL, replace: (url: string) => void): EmailLink | null {
   const fragment = new URLSearchParams(url.hash.slice(1));
   const hash = fragment.get('token_hash') ?? url.searchParams.get('token_hash');
-  const type = fragment.get('type') ?? url.searchParams.get('type');
+  const type = emailLinkType(fragment.get('type') ?? url.searchParams.get('type'));
+  const accessToken = safeEmailToken(fragment.get('access_token'));
+  const refreshToken = safeEmailToken(fragment.get('refresh_token'));
+  const expiresAt = Number(fragment.get('expires_at'));
+  const expiresIn = Number(fragment.get('expires_in'));
   const sensitive = ['token_hash', 'access_token', 'refresh_token', 'code', 'error', 'error_description', 'type'];
   if (sensitive.some((key) => url.searchParams.has(key) || fragment.has(key))) {
-    // No redirect/next parameter survives a recovery link.
-    replace(`${url.pathname}#compte`);
+    // No token, code or redirect parameter survives an email action link.
+    // Its type determines the only safe local destination.
+    replace(type === 'recovery' ? '/reinitialisation' : '/connexion');
   }
-  return (type === 'recovery' || type === 'signup') && hash && /^[a-f0-9]{32,128}$/i.test(hash)
-    ? { type, tokenHash: hash } : null;
+  if (!type) return null;
+  if (hash && /^[a-f0-9]{32,128}$/i.test(hash)) return { type, tokenHash: hash };
+  if (accessToken && refreshToken) {
+    return {
+      type,
+      session: {
+        accessToken,
+        refreshToken,
+        ...(Number.isFinite(expiresAt) && expiresAt > 0 ? { expiresAt } : {}),
+        ...(Number.isFinite(expiresIn) && expiresIn > 0 ? { expiresIn } : {}),
+      },
+    };
+  }
+  return null;
 }
 
 export function safeStripeUrl(value: string, kind: 'checkout' | 'portal', testMode: boolean): string {
@@ -100,22 +144,52 @@ export class BrowserAccount {
     this.clear();
     this.accept(await this.auth('token?grant_type=password', { email, password }));
   }
-  async signUp(email: string, password: string, displayName: string) {
-    await this.auth('signup', { email, password, data: { display_name: displayName } });
+  async signUp(
+    email: string,
+    password: string,
+    displayName: string,
+    emailRedirectTo?: string,
+  ) {
+    await this.auth('signup', {
+      email,
+      password,
+      data: { display_name: displayName },
+      ...(emailRedirectTo ? { email_redirect_to: emailRedirectTo } : {}),
+    });
   }
-  async recover(email: string) { await this.auth('recover', { email }); }
-  async confirmEmail(tokenHash: string) {
-    if (!/^[a-f0-9]{32,128}$/i.test(tokenHash)) throw new Error('Lien de confirmation invalide.');
+  async recover(email: string, emailRedirectTo?: string) {
+    await this.auth('recover', {
+      email,
+      ...(emailRedirectTo ? { email_redirect_to: emailRedirectTo } : {}),
+    });
+  }
+  private acceptEmailLink(link: EmailLink, expected: EmailLinkType): Promise<string> {
+    if (link.type !== expected) return Promise.reject(new Error('Lien de confirmation invalide.'));
+    if ('session' in link) {
+      return Promise.resolve(
+        this.accept({
+          access_token: link.session.accessToken,
+          refresh_token: link.session.refreshToken,
+          expires_at: link.session.expiresAt,
+          expires_in: link.session.expiresIn,
+        }),
+      );
+    }
+    if (!/^[a-f0-9]{32,128}$/i.test(link.tokenHash))
+      return Promise.reject(new Error('Lien de confirmation invalide.'));
+    return this.auth('verify', { token_hash: link.tokenHash, type: expected }).then((value) => this.accept(value));
+  }
+  async confirmEmail(link: EmailLink) {
     this.clear();
     const epoch = this.generation;
-    try { this.accept(await this.auth('verify', { token_hash: tokenHash, type: 'signup' })); }
+    try { await this.acceptEmailLink(link, 'signup'); }
     finally { if (epoch === this.generation) await this.signOut(); }
   }
-  async resetPassword(tokenHash: string, password: string) {
+  async resetPassword(link: EmailLink, password: string) {
     this.clear();
     const epoch = this.generation;
     try {
-      const token = this.accept(await this.auth('verify', { token_hash: tokenHash, type: 'recovery' }));
+      const token = await this.acceptEmailLink(link, 'recovery');
       await this.auth('user', { password }, token, 'PUT');
     } finally { if (epoch === this.generation) await this.signOut(); }
   }

@@ -17,10 +17,10 @@ test('recovery fragment is consumed once without preserving tokens or external r
   let replaced = '';
   const hash = 'a'.repeat(64);
   assert.equal(takeRecoveryHash(new URL(`https://site.example.invalid/#token_hash=${hash}&type=recovery&next=https://evil.invalid`), (url) => replaced = url), hash);
-  assert.equal(replaced, '/#compte');
+  assert.equal(replaced, '/reinitialisation');
   assert.equal(takeRecoveryHash(new URL(`https://site.example.invalid/${replaced}`), () => assert.fail()), null);
   assert.equal(takeRecoveryHash(new URL('https://site.example.invalid/#access_token=secret&refresh_token=secret'), (url) => replaced = url), null);
-  assert.equal(replaced, '/#compte');
+  assert.equal(replaced, '/connexion');
 });
 test('billing navigation rejects unsafe origins and non-test responses', () => {
   assert.equal(safeStripeUrl('https://checkout.stripe.com/c/pay/cs_test_fixture', 'checkout', true), 'https://checkout.stripe.com/c/pay/cs_test_fixture');
@@ -70,7 +70,7 @@ test('recovery verifies one-time hash before updating password and closes memory
     if (requestUrl(url).endsWith('/verify')) return session();
     return new Response(null, { status: 204 });
   }) as typeof fetch);
-  await client.resetPassword('a'.repeat(64), 'synthetic');
+  await client.resetPassword({ type: 'recovery', tokenHash: 'a'.repeat(64) }, 'synthetic');
   assert.deepEqual(calls, ['POST /auth/v1/verify', 'PUT /auth/v1/user', 'POST /v1/auth/logout']);
   await assert.rejects(client.token());
 });

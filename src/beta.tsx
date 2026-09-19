@@ -403,11 +403,8 @@ function App() {
       if (route === '/reinitialisation') {
         if (recoveryLink) {
           setView(null);
-          try {
-            await account.resetPassword(recoveryLink, password);
-          } finally {
-            setEmailLink(null);
-          }
+          await account.resetPassword(recoveryLink, password);
+          setEmailLink(null);
           setMode('login');
           navigate('/connexion', true);
           setMessage(
@@ -585,8 +582,8 @@ function App() {
                 void perform(async () => {
                   const link = emailLink;
                   if (!link) throw new Error('Lien de confirmation invalide.');
-                  setEmailLink(null);
                   await account!.confirmEmail(link);
+                  setEmailLink(null);
                   setMode('login');
                   setMessage('Adresse confirmée. Vous pouvez vous connecter.');
                 })
@@ -651,6 +648,7 @@ function App() {
                         : 'new-password'
                     }
                     required
+                    minLength={reset || mode === 'signup' ? 8 : undefined}
                     maxLength={256}
                   />
                 </label>
@@ -663,6 +661,7 @@ function App() {
                     name="confirmation"
                     autoComplete="new-password"
                     required
+                    minLength={8}
                     maxLength={256}
                   />
                 </label>

@@ -77,3 +77,11 @@ test('late failed confirmation cannot clear a newer login', async () => {
   finish(new Response(null, { status: 403 }));
   await assert.rejects(confirmation); assert.equal(await client.token(), 'new-login'); client.clear();
 });
+test('authentication failures use actionable messages without exposing provider details', async () => {
+  const login = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async () => new Response('{"message":"provider detail"}', { status: 400 })) as typeof fetch);
+  await assert.rejects(login.signIn('fixture@example.invalid', 'wrong'), /Adresse e-mail ou mot de passe incorrect/);
+  const verification = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async () => new Response(null, { status: 403 })) as typeof fetch);
+  await assert.rejects(verification.confirmEmail({ type: 'signup', tokenHash: 'a'.repeat(64) }), /invalide, a expiré ou a déjà été utilisé/);
+  const limited = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async () => new Response(null, { status: 429 })) as typeof fetch);
+  await assert.rejects(limited.recover('fixture@example.invalid'), /dernier e-mail reçu/);
+});

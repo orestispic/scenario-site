@@ -137,9 +137,28 @@ export class BrowserAccount {
       });
       if (epoch !== this.generation) throw new Error('Session fermée.');
       if (!response.ok) {
-        if (response.status === 401) throw new Error('Session expirée. Reconnectez-vous.');
         if (response.status === 429)
           throw new Error('Un envoi a déjà été demandé récemment. Utilisez le dernier e-mail reçu ou réessayez dans quelques minutes.');
+        const requestUrl = new URL(url);
+        const authPath = requestUrl.pathname;
+        if (
+          authPath.endsWith('/auth/v1/token') &&
+          requestUrl.searchParams.get('grant_type') === 'password' &&
+          (response.status === 400 || response.status === 401)
+        )
+          throw new Error('Adresse e-mail ou mot de passe incorrect.');
+        if (
+          authPath.endsWith('/auth/v1/verify') &&
+          [400, 401, 403, 422].includes(response.status)
+        )
+          throw new Error('Ce lien est invalide, a expiré ou a déjà été utilisé. Demandez un nouveau lien.');
+        if (
+          authPath.endsWith('/auth/v1/user') &&
+          method === 'PUT' &&
+          (response.status === 400 || response.status === 422)
+        )
+          throw new Error('Le mot de passe doit contenir au moins 8 caractères.');
+        if (response.status === 401) throw new Error('Session expirée. Reconnectez-vous.');
         throw new Error('Demande refusée. Vérifiez vos informations ou réessayez plus tard.');
       }
       const result = response.status === 204 ? undefined : await response.json();

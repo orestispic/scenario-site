@@ -226,7 +226,15 @@ export class BrowserAccount {
     this.clear();
     const epoch = this.generation;
     try { await this.acceptEmailLink(link, 'signup'); }
-    finally { if (epoch === this.generation) await this.signOut(); }
+    finally {
+      if (epoch === this.generation)
+        await this.signOut().catch(() => {
+          // Supabase has already consumed the one-time link at this point.
+          // The temporary session is cleared locally by signOut even when the
+          // backend revocation/audit request fails, so that cleanup must never
+          // turn a successful confirmation into a visible failure.
+        });
+    }
   }
   async resetPassword(link: EmailLink, password: string) {
     this.clear();
@@ -234,7 +242,13 @@ export class BrowserAccount {
     try {
       const token = await this.acceptEmailLink(link, 'recovery');
       await this.auth('user', { password }, token, 'PUT');
-    } finally { if (epoch === this.generation) await this.signOut(); }
+    } finally {
+      if (epoch === this.generation)
+        await this.signOut().catch(() => {
+          // The password update is already committed. Keep the temporary
+          // recovery session closed locally without hiding that success.
+        });
+    }
   }
   async token(): Promise<string> {
     if (!this.session) throw new Error('Connectez-vous pour continuer.');

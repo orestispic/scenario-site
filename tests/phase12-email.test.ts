@@ -62,6 +62,31 @@ test('confirmation verifies signup once and closes its temporary session', async
   await assert.rejects(client.token());
   await assert.rejects(client.confirmEmail({ type: 'signup', tokenHash: 'invalid' })); assert.equal(calls.length, 2);
 });
+test('confirmation success is not hidden by a failed temporary-session revocation', async () => {
+  const calls: string[] = [];
+  const client = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async (url) => {
+    calls.push(requestUrl(url));
+    if (requestUrl(url).endsWith('/verify'))
+      return Response.json({ access_token: 'fixture', refresh_token: 'fixture-refresh', expires_in: 300 });
+    return new Response(null, { status: 500 });
+  }) as typeof fetch);
+  await client.confirmEmail({ type: 'signup', tokenHash: 'a'.repeat(64) });
+  assert.equal(calls.length, 2);
+  await assert.rejects(client.token(), /Connectez-vous/);
+});
+test('password-reset success is not hidden by a failed temporary-session revocation', async () => {
+  const calls: string[] = [];
+  const client = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async (url) => {
+    calls.push(requestUrl(url));
+    if (requestUrl(url).endsWith('/verify'))
+      return Response.json({ access_token: 'fixture', refresh_token: 'fixture-refresh', expires_in: 300 });
+    if (requestUrl(url).endsWith('/auth/v1/user')) return Response.json({});
+    return new Response(null, { status: 500 });
+  }) as typeof fetch);
+  await client.resetPassword({ type: 'recovery', tokenHash: 'a'.repeat(64) }, 'new-password');
+  assert.equal(calls.length, 3);
+  await assert.rejects(client.token(), /Connectez-vous/);
+});
 test('expired confirmation is refused without creating a session', async () => {
   const client = new BrowserAccount({ apiBaseUrl: 'https://api.invalid', supabaseUrl: 'https://auth.invalid', supabaseKey: 'sb_publishable_fixture' }, (async () => new Response(null, { status: 403 })) as typeof fetch);
   await assert.rejects(client.confirmEmail({ type: 'signup', tokenHash: 'a'.repeat(64) })); await assert.rejects(client.token());

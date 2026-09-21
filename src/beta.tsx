@@ -25,6 +25,9 @@ import {
   ArrowUpRight,
   RefreshCw,
   MonitorDown,
+  Bot,
+  Clapperboard,
+  PanelsTopLeft,
 } from 'lucide-react';
 import {
   BrowserAccount,
@@ -124,32 +127,42 @@ const features = [
   {
     Icon: PenLine,
     title: 'Écrire un scénario',
-    text: 'Passez d’une scène à un dialogue. Les personnages, les actions et les répliques gardent leur mise en page.',
-  },
-  {
-    Icon: Cloud,
-    title: 'Retrouver ses projets',
-    text: 'Gardez vos fichiers sur votre ordinateur ou enregistrez un projet dans le cloud. Il reste privé tant que vous ne le partagez pas.',
-  },
-  {
-    Icon: Users,
-    title: 'Écrire à plusieurs',
-    text: 'Invitez un éditeur pour écrire ensemble, ou un lecteur pour consulter le projet. Les modifications s’affichent en direct.',
-  },
-  {
-    Icon: MessageSquare,
-    title: 'Commenter et répondre',
-    text: 'Ajoutez une remarque au projet, répondez à votre équipe et marquez les discussions résolues.',
+    text: 'Écrivez scène après scène : la mise en page professionnelle se construit automatiquement.',
   },
   {
     Icon: FileText,
-    title: 'Préparer les premières pages',
-    text: 'Renseignez le titre, les auteurs et les informations de votre projet. Les premières pages suivent le scénario.',
+    title: 'Dépouillement',
+    text: 'Repérez les personnages, décors et éléments de production directement depuis votre scénario.',
+  },
+  {
+    Icon: Clapperboard,
+    title: 'Découpage technique',
+    text: 'Passez du texte à la préparation du tournage, plan par plan et scène par scène.',
+  },
+  {
+    Icon: PanelsTopLeft,
+    title: 'Whiteboard',
+    text: 'Organisez vos idées, vos scènes et vos références sur un espace visuel dédié.',
+  },
+  {
+    Icon: Cloud,
+    title: 'Cloud',
+    text: 'Sauvegardez vos projets automatiquement et retrouvez-les sur vos autres appareils.',
   },
   {
     Icon: Download,
-    title: 'Exporter et conserver',
-    text: 'Exportez un PDF pour la lecture. Gardez un fichier .scenario pour continuer à modifier votre projet.',
+    title: 'Exports professionnels',
+    text: 'Préparez vos livrables aux formats Final Draft, Fountain et Word.',
+  },
+  {
+    Icon: Bot,
+    title: 'IA d’assistance',
+    text: 'Améliorez un texte déjà écrit : corrections, reformulations et traductions de vos exports.',
+  },
+  {
+    Icon: MessageSquare,
+    title: 'Commentaires',
+    text: 'Centralisez les retours, répondez à votre équipe et gardez chaque décision au bon endroit.',
   },
 ];
 const windowsDownloadUrl =
@@ -845,9 +858,7 @@ function App() {
                   page blanche<span className="blue-period">.</span>
                 </h1>
                 <p className="lead">
-                  Écrivez votre scénario. Mettez-le en page.
-                  <br className="desktop-break" /> Partagez-le avec les bonnes
-                  personnes.
+                  Le logiciel qui emmène votre idée jusqu'au tournage.
                 </p>
                 <div className="hero-actions">
                   <a className="button primary" href="/offres">
@@ -884,11 +895,11 @@ function App() {
             </div>
             <section className="container feature-section">
               <div className="section-heading">
-                <p className="eyebrow">DE LA PREMIÈRE SCÈNE AU PDF</p>
-                <h2>Écriture, partage et export.</h2>
+                <p className="eyebrow">DE L’IDÉE AU TOURNAGE</p>
+                <h2>Tout votre projet, au même endroit.</h2>
                 <p>
-                  Un éditeur pour écrire, relire et travailler sur un même
-                  projet.
+                  Écrivez, préparez et partagez votre scénario sans changer
+                  d’outil.
                 </p>
               </div>
               <div className="feature-grid">

@@ -156,24 +156,24 @@ const windowsDownloadUrl =
   'https://github.com/orestispic/scenario-app/releases/latest/download/Scenario-Setup.exe';
 const faq = [
   [
+    'Est-ce que l’IA peut écrire à ma place ?',
+    'Non. Senario est conçu pour vous aider à améliorer un texte déjà écrit, pas pour écrire votre scénario à votre place. L’IA peut notamment corriger la formulation et aller plus loin sur l’orthographe, tout en vous laissant maître de votre histoire et de vos choix.',
+  ],
+  [
     'Puis-je écrire sans connexion ?',
     'Oui. Aucun compte n’est requis pour écrire, enregistrer et rouvrir vos fichiers locaux. Connectez-vous seulement pour activer les fonctions Auteur ou Studio. La synchronisation cloud et la collaboration demandent aussi Internet.',
   ],
   [
-    'Un projet cloud est-il forcément partagé ?',
-    'Non. Un projet cloud reste privé tant que vous n’invitez personne. Vous choisissez les éditeurs et les lecteurs projet par projet.',
-  ],
-  [
-    'Quelle différence entre un éditeur et un lecteur ?',
-    'Un éditeur peut modifier le projet. Un lecteur peut le consulter. Vous gérez les invitations et les rôles depuis le partage du projet.',
-  ],
-  [
-    'Les commentaires et les premières pages sont-ils partagés ?',
-    'Oui. Ils font partie du projet, comme le texte du scénario.',
+    'Mes collaborateurs ont-ils besoin de Studio pour voir mon projet ?',
+    'Non. Les collaborateurs invités en tant que lecteurs peuvent consulter un projet partagé sans souscrire à l’offre Studio. Studio est nécessaire au propriétaire du projet pour le partager et travailler avec son équipe.',
   ],
   [
     'Quand les fonctionnalités payantes sont-elles activées ?',
     'Après la confirmation de paiement par Stripe. Vous pouvez ensuite retrouver et gérer votre abonnement depuis votre compte.',
+  ],
+  [
+    'Un projet cloud est-il forcément partagé ?',
+    'Non. Un projet cloud reste privé tant que vous n’invitez personne. Vous choisissez les éditeurs et les lecteurs projet par projet.',
   ],
   [
     'Puis-je télécharger l’application ?',

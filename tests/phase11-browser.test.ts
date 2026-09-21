@@ -22,11 +22,11 @@ test('recovery fragment is consumed once without preserving tokens or external r
   assert.equal(takeRecoveryHash(new URL('https://site.example.invalid/#access_token=secret&refresh_token=secret'), (url) => replaced = url), null);
   assert.equal(replaced, '/connexion');
 });
-test('billing navigation rejects unsafe origins and non-test responses', () => {
+test('billing navigation rejects unsafe Stripe origins', () => {
   assert.equal(safeStripeUrl('https://checkout.stripe.com/c/pay/cs_test_fixture', 'checkout', true), 'https://checkout.stripe.com/c/pay/cs_test_fixture');
   for (const value of ['javascript:alert(1)', 'https://checkout.stripe.com.evil.invalid/', 'https://user@checkout.stripe.com/'])
     assert.throws(() => safeStripeUrl(value, 'checkout', true));
-  assert.throws(() => safeStripeUrl('https://checkout.stripe.com/', 'checkout', false));
+  assert.equal(safeStripeUrl('https://checkout.stripe.com/c/pay/cs_live_fixture', 'checkout', false), 'https://checkout.stripe.com/c/pay/cs_live_fixture');
 });
 test('20 simultaneous token requests rotate the refresh token only once', async () => {
   let time = 0; let refreshes = 0;
@@ -84,7 +84,7 @@ test('mutating requests are not automatically retried after an uncertain respons
   await assert.rejects(client.checkout('fixture', 'https://site.example.invalid/'), /Vérifiez le résultat/);
   assert.equal(attempts, 1); client.clear();
 });
-test('public catalogue is display-only and rejects malformed amounts / live mode', () => {
+test('public catalogue is display-only and rejects malformed amounts', () => {
   const offer = { selectionId: 'fixture', offerCode: 'studio', displayName: 'Studio', description: null, billingInterval: 'month', currency: 'EUR', unitAmountMinor: 1234, testMode: true };
   const free = { offerCode: 'discovery', displayName: 'Gratuite', description: 'Fixture', featured: false, features: ['Fixture'], prices: [{ selectionId: null, billingInterval: 'none', currency: 'EUR', unitAmountMinor: 0, testMode: true }] };
   const paid = (offerCode: 'author_ai' | 'studio') => ({ offerCode, displayName: 'Fixture', description: 'Fixture', featured: false, features: ['Fixture'], prices: [
@@ -93,7 +93,7 @@ test('public catalogue is display-only and rejects malformed amounts / live mode
   ] });
   const catalog = { contractVersion: '2026-09-v11', environment: 'test', testMode: true, offers: [offer], plans: [free, paid('author_ai'), paid('studio')], request_id: 'fixture' };
   assert.equal(readPublicBetaCatalog(catalog).offers[0].unitAmountMinor, 1234);
-  assert.throws(() => readPublicBetaCatalog({ ...catalog, testMode: false }));
+  assert.equal(readPublicBetaCatalog({ ...catalog, environment: 'production', testMode: false }).testMode, false);
   assert.throws(() => readPublicBetaCatalog({ ...catalog, offers: [{ ...offer, unitAmountMinor: NaN }] }));
   assert.throws(() => readPublicBetaCatalog({ ...catalog, plans: [free, paid('author_ai'), paid('author_ai')] }));
   assert.throws(() => readPublicBetaCatalog({ ...catalog, plans: [{ ...free, prices: [{ ...free.prices[0], unitAmountMinor: 1 }] }, paid('author_ai'), paid('studio')] }));

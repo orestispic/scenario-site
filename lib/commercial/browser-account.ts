@@ -99,11 +99,11 @@ export function takeEmailLink(url: URL, replace: (url: string) => void): EmailAc
   return null;
 }
 
-export function safeStripeUrl(value: string, kind: 'checkout' | 'portal', testMode: boolean): string {
+export function safeStripeUrl(value: string, kind: 'checkout' | 'portal', _testMode: boolean): string {
   const url = new URL(value);
   const host = kind === 'checkout' ? 'checkout.stripe.com' : 'billing.stripe.com';
-  if (!testMode || url.protocol !== 'https:' || url.hostname !== host || url.port || url.username || url.password)
-    throw new Error('Lien de paiement test refusé.');
+  if (url.protocol !== 'https:' || url.hostname !== host || url.port || url.username || url.password)
+    throw new Error('Lien de paiement Stripe refusé.');
   return url.href;
 }
 

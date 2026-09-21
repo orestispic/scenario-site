@@ -128,8 +128,8 @@ const faq = [
     'Oui. Ils font partie du projet, comme le texte du scénario.',
   ],
   [
-    'Vais-je être débité pendant la bêta ?',
-    'Non. Les abonnements sont en mode test. N’utilisez pas de carte bancaire réelle pour les essais.',
+    'Quand les fonctionnalités payantes sont-elles activées ?',
+    'Après la confirmation de paiement par Stripe. Vous pouvez ensuite retrouver et gérer votre abonnement depuis votre compte.',
   ],
   [
     'Puis-je télécharger l’application ?',
@@ -438,6 +438,9 @@ function App() {
   }
   const notice =
     message || (!account ? 'La connexion est momentanément indisponible.' : '');
+  const catalogueInTestMode = plans.some((plan) =>
+    plan.prices.some((price) => price.testMode),
+  );
   function title(kicker: string, heading: string, description: string) {
     return (
       <div className="page-heading">
@@ -527,7 +530,7 @@ function App() {
             ) : (
               <button
                 className={`button ${plan.featured ? 'primary' : 'secondary'}`}
-                disabled={busy || !selected.testMode || !selected.selectionId}
+                disabled={busy || !selected.selectionId}
                 onClick={() =>
                   void perform(async () => {
                     location.assign(
@@ -539,7 +542,9 @@ function App() {
                   })
                 }
               >
-                Essayer {plan.displayName} en mode test{' '}
+                {selected.testMode
+                  ? `Essayer ${plan.displayName} en mode test`
+                  : `Choisir ${plan.displayName}`}{' '}
                 <ArrowUpRight size={16} />
               </button>
             )
@@ -803,7 +808,7 @@ function App() {
                   </a>
                 </div>
                 <p className="quiet-note">
-                  Bêta disponible · Aucun paiement réel
+                  Bêta disponible · Paiement sécurisé par Stripe
                 </p>
               </div>
               <EditorPreview />
@@ -908,8 +913,8 @@ function App() {
                     <dd>Automatiques et signées</dd>
                   </div>
                   <div>
-                    <dt>Prix de la bêta</dt>
-                    <dd>Aucun paiement réel</dd>
+                    <dt>Paiement</dt>
+                    <dd>Sécurisé par Stripe</dd>
                   </div>
                 </dl>
               </article>
@@ -991,8 +996,10 @@ function App() {
               </p>
             )}
             <p className="test-note">
-              <LockKeyhole size={15} /> Les abonnements sont en mode test. Aucun
-              paiement réel.
+              <LockKeyhole size={15} />
+              {catalogueInTestMode
+                ? ' Les abonnements sont en mode test. Aucun paiement réel.'
+                : ' Paiement sécurisé par Stripe. Les fonctionnalités sont activées après confirmation.'}
             </p>
             {message && <output className="notice">{message}</output>}
             <section className="faq">

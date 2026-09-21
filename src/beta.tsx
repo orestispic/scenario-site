@@ -28,6 +28,7 @@ import {
   Bot,
   Clapperboard,
   PanelsTopLeft,
+  Volume2,
 } from 'lucide-react';
 import {
   BrowserAccount,
@@ -158,6 +159,11 @@ const features = [
     Icon: Bot,
     title: 'IA d’assistance',
     text: 'Améliorez un texte déjà écrit : corrections, reformulations et traductions de vos exports.',
+  },
+  {
+    Icon: Volume2,
+    title: 'Lecture audio',
+    text: 'Écoutez votre scénario pour relire les dialogues, repérer le rythme et affiner chaque scène.',
   },
   {
     Icon: MessageSquare,

@@ -176,6 +176,14 @@ const faq = [
     'Non. Un projet cloud reste privé tant que vous n’invitez personne. Vous choisissez les éditeurs et les lecteurs projet par projet.',
   ],
   [
+    'Que se passe-t-il si je perds ou change d’ordinateur ?',
+    'Vos projets locaux restent dans vos fichiers .scenario. Avec Studio, ils sont sauvegardés automatiquement dans le cloud : vous pouvez les retrouver sur un autre appareil.',
+  ],
+  [
+    'Senario sert-il uniquement à écrire un scénario ?',
+    'Non. Studio permet aussi de préparer la suite : dépouillement, découpage technique, commentaires d’équipe et organisation du projet avant le tournage.',
+  ],
+  [
     'Puis-je télécharger l’application ?',
     'Oui. La bêta est disponible pour Windows 10 et 11 en 64 bits. Elle vérifie ensuite automatiquement les nouvelles versions signées. La version macOS n’est pas encore publiée.',
   ],

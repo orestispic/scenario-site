@@ -34,7 +34,10 @@ import {
   type BrowserAccountConfig,
 } from '../lib/commercial/browser-account';
 import { InformationPages } from './information';
-import type { PublicPlanView } from '../lib/commercial/contracts-v11';
+import type {
+  PublicPlanCode,
+  PublicPlanView,
+} from '../lib/commercial/contracts-v11';
 import './site.css';
 
 declare const __SENARIO_PUBLIC_CONFIG__: BrowserAccountConfig;
@@ -76,6 +79,47 @@ const money = (amount: number, currency: string) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(
     amount / 100,
   );
+
+// The API remains the source of truth for prices and eligibility. This copy is
+// deliberately kept in the website so the benefits stay easy to compare.
+const offerPresentation: Record<
+  PublicPlanCode,
+  { description: string; features: readonly string[] }
+> = {
+  discovery: {
+    description: 'L’essentiel pour écrire un scénario soigné, dès la première page.',
+    features: [
+      'Éditeur de scénario avec mise en page automatique et professionnelle',
+    ],
+  },
+  author_ai: {
+    description: 'Tout ce qu’il faut pour écrire plus vite, affiner votre texte et préparer vos livrables.',
+    features: [
+      'Tout ce qui est inclus dans l’offre Gratuite',
+      'IA d’écriture pour corriger et améliorer vos textes',
+      'IA pour traduire vos exports',
+      'Exports professionnels : Final Draft, Fountain et Word',
+      'Workspace Whiteboard pour organiser vos idées visuellement',
+      'Lecture vocale de votre scénario',
+      'Historique des versions intégré à chaque projet',
+      'Timeline pour structurer le rythme et la chronologie',
+    ],
+  },
+  studio: {
+    description: 'Le workspace complet pour conserver, préparer et partager vos projets de production.',
+    features: [
+      'Tout ce qui est inclus dans l’offre Auteur',
+      '5 Go de stockage dans le Workspace Cloud',
+      'Workspace Dépouillement pour préparer la production',
+      'Workspace Découpage technique pour passer du scénario au tournage',
+      'Projets partagés avec votre équipe',
+      '2 000 crédits IA par mois — plus de 3× le quota Auteur',
+      'Commentaires partagés pour centraliser les retours',
+      'Sauvegarde cloud automatique de vos projets',
+    ],
+  },
+};
+
 const features = [
   {
     Icon: PenLine,
@@ -476,6 +520,7 @@ function App() {
   function offers() {
     return plans.map((plan) => {
       const free = plan.offerCode === 'discovery';
+      const presentation = offerPresentation[plan.offerCode];
       const selected = plan.prices.find(
         (p) => p.billingInterval === (free ? 'none' : interval),
       );
@@ -502,7 +547,7 @@ function App() {
             <h3>{plan.displayName}</h3>
             {plan.featured && <span className="badge">Écriture + IA</span>}
           </div>
-          <p className="offer-description">{plan.description}</p>
+          <p className="offer-description">{presentation.description}</p>
           <p className="price">
             {money(
               annual ? yearly.unitAmountMinor / 12 : selected.unitAmountMinor,
@@ -558,7 +603,7 @@ function App() {
             </a>
           )}
           <ul className="offer-features">
-            {plan.features.map((feature) => (
+            {presentation.features.map((feature) => (
               <li key={feature}>
                 <Check size={16} />
                 <span>{feature}</span>

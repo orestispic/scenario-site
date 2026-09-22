@@ -74,6 +74,36 @@ test('recovery verifies one-time hash before updating password and closes memory
   assert.deepEqual(calls, ['POST /auth/v1/verify', 'PUT /auth/v1/user', 'POST /v1/auth/logout']);
   await assert.rejects(client.token());
 });
+test('email change requires a session and sends only the new address to Supabase Auth', async () => {
+  const requests: Array<{ url: string; method: string; authorization: string | null; body: unknown }> = [];
+  const client = new BrowserAccount(config, (async (url, init) => {
+    const href = requestUrl(url);
+    if (href.includes('/token?')) return session();
+    requests.push({
+      url: href,
+      method: init?.method ?? '',
+      authorization: new Headers(init?.headers).get('Authorization'),
+      body: JSON.parse(typeof init?.body === 'string' ? init.body : 'null'),
+    });
+    return Response.json({ id: 'fixture' });
+  }) as typeof fetch);
+  await assert.rejects(client.changeEmail('next@example.invalid'), /Connectez-vous/);
+  await client.signIn('current@example.invalid', 'synthetic');
+  await assert.rejects(client.changeEmail('not-an-email'), /Adresse e-mail invalide/);
+  await client.changeEmail('  Next+Studio@Example.Invalid ');
+  assert.deepEqual(requests, [{
+    url: 'https://auth.example.invalid/auth/v1/user',
+    method: 'PUT',
+    authorization: 'Bearer fixture-access',
+    body: { email: 'next+studio@example.invalid' },
+  }]);
+});
+test('email change failure does not falsely report a password problem', async () => {
+  const client = new BrowserAccount(config, (async (url) =>
+    requestUrl(url).includes('/token?') ? session() : new Response(null, { status: 422 })) as typeof fetch);
+  await client.signIn('current@example.invalid', 'synthetic');
+  await assert.rejects(client.changeEmail('next@example.invalid'), /Cette adresse e-mail ne peut pas être utilisée/);
+});
 test('mutating requests are not automatically retried after an uncertain response', async () => {
   let attempts = 0;
   const client = new BrowserAccount(config, (async (url) => {

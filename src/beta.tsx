@@ -311,6 +311,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [email, setEmail] = useState('');
+  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const recoveryLink = emailLink?.type === 'recovery' ? emailLink : null;
   const hasEmailSession = emailLink !== null && 'session' in emailLink;
@@ -1159,9 +1160,48 @@ function App() {
                       <dt>Adresse e-mail</dt>
                       <dd>{view.me.account.email}</dd>
                     </dl>
-                    <a className="text-link" href="/reinitialisation">
-                      Changer mon mot de passe <ArrowUpRight size={14} />
-                    </a>
+                    <div className="account-identity-actions">
+                      <a className="text-link" href="/reinitialisation">
+                        Changer mon mot de passe <ArrowUpRight size={14} />
+                      </a>
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={busy}
+                        aria-expanded={emailChangeOpen}
+                        onClick={() => setEmailChangeOpen((open) => !open)}
+                      >
+                        Changer mon adresse e-mail
+                      </button>
+                    </div>
+                    {emailChangeOpen && (
+                      <form
+                        className="account-form email-change-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const form = event.currentTarget;
+                          const value = new FormData(form).get('newEmail');
+                          void perform(async () => {
+                            if (!account || !view) throw new Error('Connectez-vous pour continuer.');
+                            if (typeof value !== 'string') throw new Error('Adresse e-mail invalide.');
+                            if (value.trim().toLocaleLowerCase('fr-FR') === view.me.account.email.toLocaleLowerCase('fr-FR'))
+                              throw new Error('Indiquez une adresse différente de votre adresse actuelle.');
+                            await account.changeEmail(value);
+                            form.reset();
+                            setEmailChangeOpen(false);
+                            setMessage('Demande envoyée. Confirmez le changement avec les messages reçus à votre adresse actuelle et à la nouvelle adresse. Tant que les deux confirmations ne sont pas terminées, votre adresse actuelle reste active.');
+                          });
+                        }}
+                      >
+                        <label>
+                          Nouvelle adresse e-mail
+                          <input type="email" name="newEmail" autoComplete="email" required maxLength={254} />
+                        </label>
+                        <button className="button secondary" type="submit" disabled={busy}>
+                          Envoyer les confirmations
+                        </button>
+                      </form>
+                    )}
                   </article>
                   <article className="panel">
                     <div className="panel-heading">

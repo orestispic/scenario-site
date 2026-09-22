@@ -4,6 +4,13 @@ import { readPublicBetaCatalog } from './contracts-v11.ts';
 
 export type BrowserAccountConfig = { apiBaseUrl: string; supabaseUrl: string; supabaseKey: string };
 
+function accountEmail(value: string): string {
+  const normalized = value.trim().toLocaleLowerCase('fr-FR');
+  if (!normalized || normalized.length > 254 || /\s/u.test(normalized) || !/^[^@]+@[^@]+\.[^@]+$/u.test(normalized))
+    throw new Error('Adresse e-mail invalide.');
+  return normalized;
+}
+
 export function validateBrowserConfig(config: BrowserAccountConfig): boolean {
   try {
     const api = new URL(config.apiBaseUrl);
@@ -157,7 +164,11 @@ export class BrowserAccount {
           method === 'PUT' &&
           (response.status === 400 || response.status === 422)
         )
-          throw new Error('Le mot de passe doit contenir au moins 8 caractères.');
+          throw new Error(
+            body && typeof body === 'object' && 'email' in body
+              ? 'Cette adresse e-mail ne peut pas être utilisée. Vérifiez-la ou choisissez-en une autre.'
+              : 'Le mot de passe doit contenir au moins 8 caractères.',
+          );
         if (response.status === 401) throw new Error('Session expirée. Reconnectez-vous.');
         throw new Error('Demande refusée. Vérifiez vos informations ou réessayez plus tard.');
       }
@@ -205,6 +216,11 @@ export class BrowserAccount {
       ? `recover?redirect_to=${encodeURIComponent(emailRedirectTo)}`
       : 'recover';
     await this.auth(path, { email });
+  }
+  async changeEmail(email: string) {
+    const nextEmail = accountEmail(email);
+    const token = await this.token();
+    await this.auth('user', { email: nextEmail }, token, 'PUT');
   }
   private acceptEmailLink(link: EmailLink, expected: EmailLinkType): Promise<string> {
     if (link.type !== expected) return Promise.reject(new Error('Lien de confirmation invalide.'));

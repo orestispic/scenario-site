@@ -159,14 +159,6 @@ main {
   height: 34px;
   object-fit: contain;
 }
-.beta-label {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
 .topbar nav {
   display: flex;
   align-items: center;
@@ -1397,9 +1389,6 @@ details p {
   .menu-toggle svg {
     width: 20px;
     height: 20px;
-  }
-  .topbar .beta-label {
-    display: none;
   }
   .topbar .mobile-offers {
     display: inline-flex;

@@ -61,7 +61,7 @@ const routes: Record<string, string> = {
   '/reinitialisation': 'Mot de passe oublié',
   '/contact': 'Contact',
   '/confidentialite': 'Confidentialité',
-  '/conditions': 'Conditions de la bêta',
+  '/conditions': 'Conditions d’utilisation',
   '/mentions': 'Mentions légales',
 };
 const legacy: Record<string, string> = {
@@ -204,7 +204,7 @@ const faq = [
   ],
   [
     'Puis-je télécharger l’application ?',
-    'Oui. La bêta est disponible pour Windows 10 et 11 en 64 bits. Elle vérifie ensuite automatiquement les nouvelles versions signées. La version macOS n’est pas encore publiée.',
+    'Oui. Senario est disponible pour Windows 10 et 11 en 64 bits. Il vérifie ensuite automatiquement les nouvelles versions signées. La version macOS n’est pas encore publiée.',
   ],
   [
     'Comment conserver une copie de mon travail ?',
@@ -509,7 +509,7 @@ function App() {
   }
   const notice =
     message || (!account ? 'La connexion est momentanément indisponible.' : '');
-  const catalogueInTestMode = plans.some((plan) =>
+  const catalogueHasNonProductionPrice = plans.some((plan) =>
     plan.prices.some((price) => price.testMode),
   );
   function title(kicker: string, heading: string, description: string) {
@@ -602,7 +602,7 @@ function App() {
             ) : (
               <button
                 className={`button ${plan.featured ? 'primary' : 'secondary'}`}
-                disabled={busy || !selected.selectionId}
+                disabled={busy || !selected.selectionId || selected.testMode}
                 onClick={() =>
                   void perform(async () => {
                     location.assign(
@@ -615,7 +615,7 @@ function App() {
                 }
               >
                 {selected.testMode
-                  ? `Essayer ${plan.displayName} en mode test`
+                  ? 'Offre temporairement indisponible'
                   : `Choisir ${plan.displayName}`}{' '}
                 <ArrowUpRight size={16} />
               </button>
@@ -799,7 +799,6 @@ function App() {
           <img src="/scenario-logo.png" alt="" />
           <span>senario</span>
         </a>
-        <span className="beta-label">BÊTA</span>
         <a className="button primary mobile-offers" href="/offres">
           Offres
         </a>
@@ -878,7 +877,7 @@ function App() {
                   </a>
                 </div>
                 <p className="quiet-note">
-                  Bêta disponible · Paiement sécurisé par Stripe
+                  Paiement sécurisé par Stripe
                 </p>
               </div>
               <EditorPreview />
@@ -928,7 +927,7 @@ function App() {
                 <div>
                   <h2>Senario est disponible pour Windows.</h2>
                   <p>
-                    Installez la bêta sur Windows 10 ou 11 en 64 bits. Les
+                    Installez Senario sur Windows 10 ou 11 en 64 bits. Les
                     nouvelles versions signées sont ensuite téléchargées et
                     installées automatiquement.
                   </p>
@@ -945,7 +944,7 @@ function App() {
             {title(
               'APPLICATION WINDOWS',
               'Télécharger Senario.',
-              'Installez la bêta sur Windows 10 ou 11. Vos fichiers .scenario restent enregistrés sur votre ordinateur.',
+              'Installez Senario sur Windows 10 ou 11. Vos fichiers .scenario restent enregistrés sur votre ordinateur.',
             )}
             <div className="download-grid">
               <article className="panel download-card">
@@ -972,7 +971,7 @@ function App() {
                 <dl className="download-facts">
                   <div>
                     <dt>Version</dt>
-                    <dd>0.1.12 · bêta</dd>
+                    <dd>0.1.12</dd>
                   </div>
                   <div>
                     <dt>Format</dt>
@@ -1004,8 +1003,8 @@ function App() {
                     <div>
                       <strong>Ouvrez le fichier</strong>
                       <p>
-                        Pendant la bêta, Windows peut afficher « Éditeur
-                        inconnu ». Vérifiez que le fichier s’appelle bien
+                        Windows peut afficher « Éditeur inconnu ». Vérifiez que
+                        le fichier s’appelle bien
                         Scenario-Setup.exe avant de continuer.
                       </p>
                     </div>
@@ -1067,8 +1066,8 @@ function App() {
             )}
             <p className="test-note">
               <LockKeyhole size={15} />
-              {catalogueInTestMode
-                ? ' Les abonnements sont en mode test. Aucun paiement réel.'
+              {catalogueHasNonProductionPrice
+                ? ' Les abonnements sont temporairement indisponibles.'
                 : ' Paiement sécurisé par Stripe. Les fonctionnalités sont activées après confirmation.'}
             </p>
             {message && <output className="notice">{message}</output>}
@@ -1259,7 +1258,7 @@ function App() {
             {title(
               'CONTACT',
               'Contactez l’équipe.',
-              'Un problème avec votre compte, une question sur un projet ou une remarque sur la bêta ? Écrivez-nous.',
+              'Un problème avec votre compte ou une question sur un projet ? Écrivez-nous.',
             )}
             <div className="contact-grid">
               <article className="panel contact-card">
@@ -1318,7 +1317,7 @@ function App() {
             {title(
               'INFORMATIONS',
               routes[route],
-              'Informations applicables à la bêta.',
+              'Informations sur le service Senario.',
             )}
             <InformationPages page={route.slice(1)} />
           </div>
@@ -1350,7 +1349,7 @@ function App() {
           <a href="/contact">Contact</a>
         </div>
         <div className="container footer-bottom">
-          <span>© {new Date().getFullYear()} senario · Bêta</span>
+          <span>© {new Date().getFullYear()} senario</span>
           <nav aria-label="Informations légales">
             <a href="/confidentialite">Confidentialité</a>
             <a href="/conditions">Conditions</a>

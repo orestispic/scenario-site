@@ -1,4 +1,4 @@
-/** Public beta information. Unapproved commercial policies are kept out of the bundle. */
+/** Public information pages. */
 export function InformationPages({ page }: { page?: string }) {
   return (
     <>
@@ -6,7 +6,7 @@ export function InformationPages({ page }: { page?: string }) {
         <section className="section help" id="support">
           <h2>Aide et support</h2>
           <p>
-            Pour toute question sur la bêta privée, écrivez à{' '}
+            Pour toute question sur Senario, écrivez à{' '}
             <a href="mailto:support@senario.app">support@senario.app</a>.
           </p>
           <details>
@@ -30,7 +30,7 @@ export function InformationPages({ page }: { page?: string }) {
             </p>
           </details>
           <details>
-            <summary>Quitter la bêta ou demander vos données</summary>
+            <summary>Gérer votre compte ou demander vos données</summary>
             <p>
               Adressez votre demande à{' '}
               <a href="mailto:support@senario.app">support@senario.app</a>. La
@@ -43,10 +43,10 @@ export function InformationPages({ page }: { page?: string }) {
       )}
       {(!page || page === 'confidentialite') && (
         <section className="section help" id="confidentialite">
-          <h2>Vos données dans la bêta</h2>
+          <h2>Vos données</h2>
           <p>
-            Information provisoire — la politique complète sera finalisée avant
-            l’ouverture publique.
+            Découvrez comment vos projets et votre compte sont utilisés dans
+            Senario.
           </p>
           <details open>
             <summary>Projets locaux et projets cloud</summary>
@@ -63,12 +63,10 @@ export function InformationPages({ page }: { page?: string }) {
             <p>
               Supabase traite l’authentification et le stockage cloud ;
               Cloudflare exécute l’API et la collaboration ; Vercel héberge le
-              site ; Stripe gère les essais de facturation. Les journaux
+              site ; Stripe gère les paiements. Les journaux
               applicatifs sont conçus pour exclure les textes des scénarios,
               prompts, réponses IA et secrets. Les fournisseurs peuvent
-              conserver leurs propres journaux techniques. Les régions, durées
-              de conservation et garanties de transfert doivent encore être
-              documentées.
+              conserver leurs propres journaux techniques.
             </p>
           </details>
           <details>
@@ -83,19 +81,18 @@ export function InformationPages({ page }: { page?: string }) {
             </p>
           </details>
           <p>
-            Les durées de conservation et la procédure de suppression des
-            sauvegardes sont en cours de définition. Ne confiez pas de documents
-            sensibles à cette bêta.
+            Pour toute question concernant vos données ou votre compte, écrivez
+            à <a href="mailto:support@senario.app">support@senario.app</a>.
           </p>
         </section>
       )}
       {(!page || page === 'conditions') && (
         <section className="section help" id="conditions">
-          <h2>Conditions de la bêta</h2>
+          <h2>Conditions d’utilisation</h2>
           <p>
-            La bêta permet d’évaluer senario avec des comptes et paiements de
-            test. Les offres affichées ne constituent pas une vente active.
-            Aucune disponibilité continue n’est promise à ce stade.
+            Senario permet d’écrire, de préparer et de partager des scénarios.
+            Les prix et modalités applicables sont présentés avant la
+            confirmation de votre commande.
           </p>
           <p>
             Vous conservez vos droits sur vos textes. Ne partagez que des
@@ -104,23 +101,18 @@ export function InformationPages({ page }: { page?: string }) {
             fonctions IA peuvent produire des erreurs : relisez leurs résultats.
           </p>
           <p>
-            Les conditions commerciales, les modalités de résiliation, la
-            fiscalité, les garanties applicables et les informations de
-            médiation sont à finaliser avant toute vente. Ces informations de
-            bêta ne remplacent pas les futures CGU et CGV.
+            Les abonnements et leurs paiements sont gérés de manière sécurisée
+            par Stripe. Vous pouvez retrouver les informations de votre formule
+            depuis votre compte.
           </p>
         </section>
       )}
       {(!page || page === 'mentions') && (
         <section className="section help" id="mentions">
-          <h2>Mentions légales en préparation</h2>
+          <h2>Mentions légales</h2>
           <p>
             Projet porté par Orestis Picard (Orestis Production), SIRET
             95295149900013. Domaine : senario.app.
-          </p>
-          <p>
-            Les coordonnées professionnelles de l’éditeur et les mentions
-            d’hébergement complètes restent à renseigner avant la publication.
           </p>
           <p>
             Le site est hébergé chez Vercel. Contact :{' '}

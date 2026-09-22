@@ -20,19 +20,19 @@ export default function Home() {
           </div>
           <div className="grid gap-4">
             <p className="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">
-              Abonnements · mode test
+              Abonnements
             </p>
             <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-[-0.035em] sm:text-5xl">
               Choisissez votre rythme d’écriture.
             </h1>
             <p className="max-w-lg text-base leading-7 text-slate-600">
-              Comparez les offres reçues de l’API, ouvrez Checkout test et
-              retrouvez ici l’état confirmé par les webhooks.
+              Comparez les offres, gérez votre abonnement et retrouvez ici son
+              état confirmé.
             </p>
           </div>
           <div className="grid max-w-lg gap-3 text-sm text-slate-700 sm:grid-cols-3">
             <p className="rounded-xl border border-white/70 bg-white/55 p-3">
-              Checkout et portail Stripe test
+              Checkout et portail Stripe sécurisés
             </p>
             <p className="rounded-xl border border-white/70 bg-white/55 p-3">
               Webhooks signés et rejouables sans doublon

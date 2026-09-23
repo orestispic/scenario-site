@@ -1227,9 +1227,7 @@ function App() {
                         )[view.billing.billing.status]
                       }
                     </span>
-                    <p className="muted">
-                      Abonnement de test · Aucun prélèvement réel
-                    </p>
+                    <p className="muted">Paiement sécurisé par Stripe</p>
                     <button
                       className="button secondary"
                       disabled={busy}
@@ -1241,7 +1239,7 @@ function App() {
                         )
                       }
                     >
-                      Gérer l’abonnement test <ArrowUpRight size={16} />
+                      Gérer l’abonnement <ArrowUpRight size={16} />
                     </button>
                   </article>
                 </div>

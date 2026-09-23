@@ -37,6 +37,40 @@ type EmailSession = {
   expiresIn?: number;
 };
 
+const sessionStoragePrefix = 'senario.auth.session.v1';
+
+function browserStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function storedSession(value: string | null): SessionTokens | null {
+  if (!value || value.length > 50_000) return null;
+  try {
+    const session = JSON.parse(value) as Partial<SessionTokens>;
+    if (
+      typeof session.accessToken !== 'string' ||
+      typeof session.refreshToken !== 'string' ||
+      typeof session.expiresAt !== 'string' ||
+      !session.accessToken ||
+      !session.refreshToken ||
+      session.accessToken.length > 16_384 ||
+      session.refreshToken.length > 16_384 ||
+      !Number.isFinite(Date.parse(session.expiresAt))
+    ) return null;
+    return {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Supabase can return either a token hash (custom email templates) or a
  * short-lived session in the fragment after it has already verified the
@@ -114,18 +148,35 @@ export function safeStripeUrl(value: string, kind: 'checkout' | 'portal', _testM
   return url.href;
 }
 
-/** Access AND refresh tokens are memory-only; one renewal at a time.
+/**
+ * The session is restored in the same browser so closing or refreshing a tab
+ * does not sign the user out. A fresh Supabase access token is still required
+ * for every protected API call, and explicit logout removes the local record.
  * Logout aborts all in-flight operations before revoking this session.
  * No automatic mutation retries after uncertain network responses.
  */
 export class BrowserAccount {
   private session: SessionTokens | null = null;
+  private readonly storageKey: string;
   private generation = 0;
   private pending = new Set<AbortController>();
   private renewing: Promise<string> | null = null;
   constructor(private config: BrowserAccountConfig,
     private fetcher: typeof fetch = fetch, private now: () => number = Date.now) {
     if (!validateBrowserConfig(config)) throw new Error('Espace compte non configuré.');
+    this.storageKey = `${sessionStoragePrefix}:${new URL(config.apiBaseUrl).origin}:${new URL(config.supabaseUrl).host}`;
+    this.session = this.readStoredSession();
+  }
+  private readStoredSession(): SessionTokens | null {
+    return storedSession(browserStorage()?.getItem(this.storageKey) ?? null);
+  }
+  private persistSession(): void {
+    try {
+      if (this.session) browserStorage()?.setItem(this.storageKey, JSON.stringify(this.session));
+    } catch {
+      // Private browsing and browser policies may block persistent storage.
+      // The current in-memory session remains usable in that case.
+    }
   }
   private async request<T>(url: string, body?: unknown, token?: string, method = body === undefined ? 'GET' : 'POST'): Promise<T> {
     const epoch = this.generation;
@@ -190,6 +241,7 @@ export class BrowserAccount {
     if (!body.access_token || !body.refresh_token || !Number.isFinite(expires) || expires <= this.now())
       throw new Error('Session invalide.');
     this.session = { accessToken: body.access_token, refreshToken: body.refresh_token, expiresAt: new Date(expires).toISOString() };
+    this.persistSession();
     return body.access_token;
   }
   async signIn(email: string, password: string) {
@@ -267,6 +319,9 @@ export class BrowserAccount {
     }
   }
   async token(): Promise<string> {
+    const persisted = this.readStoredSession();
+    if (persisted && persisted.refreshToken !== this.session?.refreshToken)
+      this.session = persisted;
     if (!this.session) throw new Error('Connectez-vous pour continuer.');
     if (Date.parse(this.session.expiresAt) - this.now() > 60_000) return this.session.accessToken;
     if (!this.renewing) {
@@ -302,6 +357,7 @@ export class BrowserAccount {
   clear() {
     this.generation++;
     this.session = null;
+    try { browserStorage()?.removeItem(this.storageKey); } catch { /* Storage is optional. */ }
     this.renewing = null;
     for (const request of this.pending) request.abort();
     this.pending.clear();

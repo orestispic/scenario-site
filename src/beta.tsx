@@ -373,11 +373,13 @@ function App() {
               'Les offres ne sont pas disponibles pour le moment. Réessayez dans quelques minutes.',
             );
         });
-    const close = () => {
-      account?.clear();
-      setView(null);
-      setEmailLink(null);
-    };
+    if (account)
+      void account.account().then((restored) => {
+        if (active) setView(restored);
+      }).catch(() => {
+        // A transient API issue must not erase a locally persisted session.
+        // BrowserAccount clears the session itself only if refresh fails.
+      });
     const navigation = () => {
       const action = takeEmailLink(new URL(location.href), (url) =>
         history.replaceState(null, '', url),
@@ -403,13 +405,10 @@ function App() {
     };
     addEventListener('popstate', navigation);
     addEventListener('hashchange', navigation);
-    addEventListener('pagehide', close);
     return () => {
       active = false;
       removeEventListener('popstate', navigation);
       removeEventListener('hashchange', navigation);
-      removeEventListener('pagehide', close);
-      account?.clear();
     };
   }, []);
   useEffect(() => {

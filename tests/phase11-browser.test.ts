@@ -39,6 +39,30 @@ test('20 simultaneous token requests rotate the refresh token only once', async 
   assert.equal(refreshes, 1); client.clear();
   await assert.rejects(client.token(), /Connectez-vous/);
 });
+test('a session remains available after the page is reopened until explicit logout', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const values = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    } as Storage,
+  });
+  try {
+    const firstPage = new BrowserAccount(config, (async () => session()) as typeof fetch);
+    await firstPage.signIn('fixture@example.invalid', 'synthetic');
+    const reopenedPage = new BrowserAccount(config, (async () => session()) as typeof fetch);
+    assert.equal(await reopenedPage.token(), 'fixture-access');
+    await reopenedPage.signOut();
+    const signedOutPage = new BrowserAccount(config, (async () => session()) as typeof fetch);
+    await assert.rejects(signedOutPage.token(), /Connectez-vous/);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
+});
 test('late login response cannot restore a closed session', async () => {
   let finish!: (response: Response) => void;
   const client = new BrowserAccount(config, (() => new Promise((resolve) => { finish = resolve; })) as typeof fetch);
